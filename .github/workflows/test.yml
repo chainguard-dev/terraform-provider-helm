@@ -1,7 +1,12 @@
 # Terraform Provider testing workflow.
-name: Acceptance Tests
+name: Tests
 
 on:
+  pull_request:
+    branches:
+      - 'main'
+    paths-ignore:
+      - 'README.md'
   push:
     branches:
       - 'main'
@@ -12,7 +17,7 @@ permissions: {}
 
 jobs:
   test:
-    name: Terraform Provider Acceptance Tests
+    name: Terraform Provider Tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
