@@ -2,9 +2,13 @@ name: Build and Generate
 
 on:
   pull_request:
+    branches:
+      - 'main'
     paths-ignore:
       - 'README.md'
   push:
+    branches:
+      - 'main'
     paths-ignore:
       - 'README.md'
 
