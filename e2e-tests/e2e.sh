@@ -9,20 +9,19 @@ set -euo pipefail
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 REPO_ROOT="$( cd "$SCRIPT_DIR/.." &> /dev/null && pwd )"
 TEMP_DIR=$(mktemp -d)
+REGISTRY=${REGISTRY:-registry.local:5000}
 
 # Cleanup function
 cleanup() {
   echo "Cleaning up temporary files..."
   rm -rf "$TEMP_DIR"
-  k3d registry delete registry.localhost || true
 }
 
 # Set trap to ensure cleanup runs on exit
 trap cleanup EXIT
 
-# Start a local k3d registry
-echo "Starting k3d registry on port 12733..."
-k3d registry create registry.localhost --port 12733 || true
+# Use existing registry
+echo "Using registry at $REGISTRY..."
 
 # Build the binary in the current directory
 echo "Building terraform-provider-helm binary..."
@@ -43,4 +42,46 @@ EOF
 # Run terraform
 cd "$SCRIPT_DIR"
 echo "Running terraform apply..."
-TF_CLI_CONFIG_FILE="$TEMP_DIR/dev.tfrc" terraform apply -var="registry=registry.localhost:12733/e2e" -auto-approve
+TF_CLI_CONFIG_FILE="$TEMP_DIR/dev.tfrc" terraform apply -var="registry=$REGISTRY/e2e" -auto-approve
+if [ $? -eq 0 ]; then
+  echo "✅ Terraform apply completed successfully"
+else
+  echo "❌ Terraform apply failed"
+  exit 1
+fi
+
+# Extract reference from terraform output
+echo "Extracting image reference..."
+ISTIO_REF=$(TF_CLI_CONFIG_FILE="$TEMP_DIR/dev.tfrc" terraform output -raw istio_base_ref)
+
+if [ -n "$ISTIO_REF" ]; then
+  echo "✅ Istio base reference: $ISTIO_REF"
+
+  kubectl create ns istio-system || true
+  echo "✅ Namespace istio-system created or already exists"
+  
+  # Install the Helm chart from the OCI reference
+  echo "Installing Helm chart from $ISTIO_REF..."
+  helm install --plain-http istio-base oci://$ISTIO_REF --wait
+  if [ $? -eq 0 ]; then
+    echo "✅ Helm chart installed successfully"
+  else
+    echo "❌ Helm chart installation failed"
+    exit 1
+  fi
+  
+  # Verify Istio CRDs are present in the cluster
+  echo "Verifying Istio CRDs in the cluster..."
+  ISTIO_CRDS=$(kubectl get crds | grep istio.io || true)
+  
+  if [ -n "$ISTIO_CRDS" ]; then
+    echo "✅ Istio CRDs found in the cluster:"
+    echo "$ISTIO_CRDS"
+  else
+    echo "❌ No Istio CRDs found in the cluster"
+    exit 1
+  fi
+else
+  echo "Failed to extract istio base reference from terraform output"
+  exit 1
+fi
