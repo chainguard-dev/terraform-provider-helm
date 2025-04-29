@@ -20,8 +20,8 @@ import (
 
 // Ensure the implementation satisfies the expected interfaces.
 var (
-	_ resource.Resource              = &helmChartResource{}
-	_ resource.ResourceWithConfigure = &helmChartResource{}
+	_ resource.Resource                = &helmChartResource{}
+	_ resource.ResourceWithConfigure   = &helmChartResource{}
 	_ resource.ResourceWithImportState = &helmChartResource{}
 )
 
@@ -37,14 +37,14 @@ type helmChartResource struct {
 
 // helmChartResourceModel maps the resource schema data.
 type helmChartResourceModel struct {
-	ID                   types.String `tfsdk:"id"`
-	Repository           types.String `tfsdk:"repository"`
-	PackageName          types.String `tfsdk:"package_name"`
-	PackageVersion       types.String `tfsdk:"package_version"`
-	PackageArch          types.String `tfsdk:"package_arch"`
-	Digest               types.String `tfsdk:"digest"`
-	Name                 types.String `tfsdk:"name"`
-	Version              types.String `tfsdk:"version"`
+	ID             types.String `tfsdk:"id"`
+	Repository     types.String `tfsdk:"repository"`
+	PackageName    types.String `tfsdk:"package_name"`
+	PackageVersion types.String `tfsdk:"package_version"`
+	PackageArch    types.String `tfsdk:"package_arch"`
+	Digest         types.String `tfsdk:"digest"`
+	Name           types.String `tfsdk:"name"`
+	Version        types.String `tfsdk:"version"`
 }
 
 // Configure adds the provider configured client to the resource.
@@ -141,20 +141,20 @@ func (r *helmChartResource) Create(ctx context.Context, req resource.CreateReque
 		)
 		return
 	}
-	
+
 	// Determine architecture
 	arch := "aarch64" // Default to ARM64
 	if !plan.PackageArch.IsNull() {
 		arch = plan.PackageArch.ValueString()
 	}
-	
+
 	// Get package version if specified
 	var packageVersion *string
 	if !plan.PackageVersion.IsNull() {
 		version := plan.PackageVersion.ValueString()
 		packageVersion = &version
 	}
-	
+
 	// Fetch package from repository
 	tempApkFile, cleanup, err := fetchAPKPackage(
 		ctx,
@@ -174,7 +174,6 @@ func (r *helmChartResource) Create(ctx context.Context, req resource.CreateReque
 	}
 	defer cleanup()
 	defer os.Remove(tempApkFile)
-	
 
 	// Create chart builder
 	builder, err := NewChartBuilder(tempApkFile)
@@ -208,7 +207,7 @@ func (r *helmChartResource) Create(ctx context.Context, req resource.CreateReque
 
 	// Push the chart to the OCI registry by digest only (no tag)
 	// Pushing chart directory contents to OCI registry by digest only
-	
+
 	// Get the chart image
 	img, err := builder.AsImage()
 	if err != nil {
@@ -261,7 +260,7 @@ func (r *helmChartResource) Read(ctx context.Context, req resource.ReadRequest, 
 	// Check if the Helm chart exists in the registry
 	// In a production setting, you'd check if the chart exists and update its digest
 	// For now, we keep the state as is
-	
+
 	// State already contains name and version values from the create/update operation
 	// We don't need to set default values here as they should already be populated
 	// from the Chart.yaml metadata
@@ -297,20 +296,20 @@ func (r *helmChartResource) Update(ctx context.Context, req resource.UpdateReque
 		)
 		return
 	}
-	
+
 	// Determine architecture
 	arch := "aarch64" // Default to ARM64
 	if !plan.PackageArch.IsNull() {
 		arch = plan.PackageArch.ValueString()
 	}
-	
+
 	// Get package version if specified
 	var packageVersion *string
 	if !plan.PackageVersion.IsNull() {
 		version := plan.PackageVersion.ValueString()
 		packageVersion = &version
 	}
-	
+
 	// Fetch package from repository
 	tempApkFile, cleanup, err := fetchAPKPackage(
 		ctx,
@@ -330,7 +329,6 @@ func (r *helmChartResource) Update(ctx context.Context, req resource.UpdateReque
 	}
 	defer cleanup()
 	defer os.Remove(tempApkFile)
-	
 
 	// Create chart builder
 	builder, err := NewChartBuilder(tempApkFile)
@@ -364,7 +362,7 @@ func (r *helmChartResource) Update(ctx context.Context, req resource.UpdateReque
 
 	// Push the chart to the OCI registry by digest only (no tag)
 	// Pushing chart directory contents to OCI registry by digest only
-	
+
 	// Get the chart image
 	img, err := builder.AsImage()
 	if err != nil {
@@ -420,18 +418,17 @@ func (r *helmChartResource) Delete(ctx context.Context, req resource.DeleteReque
 	// In a production setting, you'd need to implement this using the registry's API
 	// For now, we'll just log the action
 	// Deleting Helm chart from OCI registry
-	
+
 	// Note: Most OCI registries don't support deletion via API, so this is a no-op
 	// We just remove it from Terraform state
 }
 
-// ImportState handles importing an existing OCI Helm chart into Terraform state
+// ImportState handles importing an existing OCI Helm chart into Terraform state.
 func (r *helmChartResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	// The import ID is expected to be in the format: repository@digest
 	// For example: ttl.sh/test-repo/test-chart@sha256:abc123def456
-	
+
 	// Use ID directly as it matches our internal ID format
 	// In latest version we need to pass path.Root("id")
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
 }
-

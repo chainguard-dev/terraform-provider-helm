@@ -34,7 +34,7 @@ func New(version string) func() provider.Provider {
 
 // helmProvider is the provider implementation.
 type helmProvider struct {
-	version string
+	version   string
 	ociClient oci.Client
 }
 
@@ -78,15 +78,15 @@ func (p *helmProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 
 	// Check environment variables for configuration
 	packageRepository := os.Getenv("PACKAGE_REPOSITORY")
-	
+
 	// Initialize empty keys slice
 	var packageRepositoryPubKeys []string
-	
+
 	// Check for environment variable with keys
 	if envKey := os.Getenv("PACKAGE_REPOSITORY_PUB_KEY"); envKey != "" {
 		packageRepositoryPubKeys = append(packageRepositoryPubKeys, envKey)
 	}
-	
+
 	if !config.PackageRepository.IsNull() {
 		packageRepository = config.PackageRepository.ValueString()
 	}
@@ -134,4 +134,3 @@ type helmClient struct {
 	packageRepositoryPubKeys []string
 	ociClient                oci.Client
 }
-

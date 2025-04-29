@@ -13,13 +13,13 @@ import (
 	"helm.sh/helm/v3/pkg/chart"
 )
 
-// Helm OCI media types
+// Helm OCI media types.
 const (
-	// ConfigMediaType is the media type for Helm chart config
+	// ConfigMediaType is the media type for Helm chart config.
 	ConfigMediaType = "application/vnd.cncf.helm.config.v1+json"
-	// ChartLayerMediaType is the media type for Helm chart content
+	// ChartLayerMediaType is the media type for Helm chart content.
 	ChartLayerMediaType = "application/vnd.cncf.helm.chart.content.v1.tar+gzip"
-	// OCIManifestMediaType is the OCI manifest media type for Helm charts
+	// OCIManifestMediaType is the OCI manifest media type for Helm charts.
 	OCIManifestMediaType = "application/vnd.oci.image.manifest.v1+json"
 )
 
@@ -40,33 +40,33 @@ type ChartImage struct {
 func NewChartImage(layer v1.Layer, config []byte) *ChartImage {
 	// Create config layer using static.NewLayer
 	configLayer := static.NewLayer(config, ConfigMediaType)
-	
+
 	// Create maps for layer lookups
 	byDiffIDs := make(map[v1.Hash]v1.Layer)
 	byDigests := make(map[v1.Hash]v1.Layer)
-	
+
 	// Add chart layer
 	layerDigest, _ := layer.Digest()
 	layerDiffID, _ := layer.DiffID()
 	byDigests[layerDigest] = layer
 	byDiffIDs[layerDiffID] = layer
-	
+
 	// Add config layer
 	configDigest, _ := configLayer.Digest()
 	configDiffID, _ := configLayer.DiffID()
 	byDigests[configDigest] = configLayer
 	byDiffIDs[configDiffID] = configLayer
-	
+
 	// Parse chart metadata from config to extract annotations
 	var chartMeta chart.Metadata
 	if err := json.Unmarshal(config, &chartMeta); err != nil {
 		// If we can't parse the chart metadata, continue with empty annotations
 		chartMeta = chart.Metadata{}
 	}
-	
+
 	// Create manifest annotations from chart metadata
 	annotations := make(map[string]string)
-	
+
 	// Add standard OCI annotations
 	if chartMeta.Name != "" {
 		annotations["org.opencontainers.image.title"] = chartMeta.Name
@@ -80,7 +80,7 @@ func NewChartImage(layer v1.Layer, config []byte) *ChartImage {
 	if len(chartMeta.Sources) > 0 && chartMeta.Sources[0] != "" {
 		annotations["org.opencontainers.image.source"] = chartMeta.Sources[0]
 	}
-	
+
 	// Add any custom annotations from the chart
 	if chartMeta.Annotations != nil {
 		for k, v := range chartMeta.Annotations {
@@ -89,10 +89,10 @@ func NewChartImage(layer v1.Layer, config []byte) *ChartImage {
 			}
 		}
 	}
-	
+
 	// Construct the manifest
 	configSize, _ := configLayer.Size()
-	chartSize, _ := layer.Size() 
+	chartSize, _ := layer.Size()
 	manifest := v1.Manifest{
 		SchemaVersion: 2,
 		MediaType:     OCIManifestMediaType,
@@ -110,7 +110,7 @@ func NewChartImage(layer v1.Layer, config []byte) *ChartImage {
 		},
 		Annotations: annotations,
 	}
-	
+
 	return &ChartImage{
 		manifest:  manifest,
 		layer:     layer,
@@ -220,4 +220,3 @@ func ChartYAMLToConfig(chartYAML []byte) ([]byte, error) {
 
 	return jsonData, nil
 }
-
