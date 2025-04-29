@@ -1,0 +1,49 @@
+# Terraform Provider testing workflow.
+name: Acceptance Tests
+
+on:
+  push:
+    branches:
+      - 'main'
+    paths-ignore:
+      - 'README.md'
+
+permissions: {}
+
+jobs:
+  test:
+    name: Terraform Provider Acceptance Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      contents: read
+      id-token: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # list whatever Terraform versions here you would like to support
+        terraform:
+          - '1.9.*'
+          - '1.10.*'
+          - '1.11.*'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
+        with:
+          go-version-file: 'go.mod'
+          check-latest: true
+          cache: true
+
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: ${{ matrix.terraform }}
+          terraform_wrapper: false
+
+      - run: go mod download
+      - run: go test -v -cover ./internal/...
+        timeout-minutes: 10
