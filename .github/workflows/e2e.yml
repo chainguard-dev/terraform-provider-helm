@@ -1,0 +1,58 @@
+# Copyright 2025 Chainguard, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+name: E2E Tests
+
+on:
+  pull_request:
+    branches:
+      - 'main'
+    paths-ignore:
+      - 'README.md'
+  push:
+    branches:
+      - 'main'
+    paths-ignore:
+      - 'README.md'
+  workflow_dispatch: # Allows manual triggering of the workflow
+
+permissions: {}
+
+jobs:
+  e2e-test:
+    name: End-to-End Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
+        with:
+          go-version-file: 'go.mod'
+          check-latest: true
+          cache: true
+
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: '1.11.*'
+          terraform_wrapper: false
+
+      - name: Set up k3d
+        uses: chainguard-dev/actions/setup-k3d@main
+
+      - name: Run e2e tests
+        run: |
+          cd e2e-tests
+          chmod +x ./e2e.sh
+          ./e2e.sh
+
+      - name: Cleanup
+        if: always()
+        run: |
+          k3d registry delete registry.localhost || true

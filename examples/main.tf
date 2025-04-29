@@ -1,3 +1,12 @@
+# Copyright 2025 Chainguard, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+variable "registry" {
+  description = "Registry URL prefix for chart repositories"
+  type        = string
+  default     = "ttl.sh/tcnghia"
+}
+
 terraform {
   required_providers {
     helm = {
@@ -16,14 +25,14 @@ provider "helm" {
 
 # Using package repository for istio-charts-base with specific version
 resource "helm_chart" "istio_base_exact_version" {
-  repository      = "ttl.sh/tcnghia/test1"
+  repository      = "${var.registry}/test1"
   package_name    = "istio-charts-base"
   package_version = "1.20.3-r0"
 }
 
 # Using package repository for istio-charts-base with latest version
 resource "helm_chart" "istio_base" {
-  repository   = "ttl.sh/tcnghia/test3"
+  repository   = "${var.registry}/test3"
   package_name = "istio-charts-base"
 }
 
