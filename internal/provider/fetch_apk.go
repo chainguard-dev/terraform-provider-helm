@@ -18,7 +18,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 )
 
-// fetchAPKPackage fetches a package from an APK repository and returns the path to a temporary APK file
+// fetchAPKPackage fetches a package from an APK repository and returns the path to a temporary APK file.
 func fetchAPKPackage(
 	ctx context.Context,
 	packageName string,
@@ -26,7 +26,7 @@ func fetchAPKPackage(
 	arch string,
 	packageRepo string,
 	packageKeys []string,
-	diagnostics *diag.Diagnostics,
+	_ *diag.Diagnostics,
 ) (string, func(), error) {
 	// Create a temporary directory for the build context
 	tempDir, err := os.MkdirTemp("", "apko-build-*")

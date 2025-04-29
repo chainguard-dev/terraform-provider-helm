@@ -16,13 +16,13 @@ import (
 func TestChartBuilder(t *testing.T) {
 	// Test cases for ChartBuilder
 	tests := []struct {
-		name               string
-		apkFilePath        string
-		expectError        bool
-		errorContains      string
-		expectedChartName  string
-		expectedChartVer   string
-		validateAsImage    bool
+		name              string
+		apkFilePath       string
+		expectError       bool
+		errorContains     string
+		expectedChartName string
+		expectedChartVer  string
+		validateAsImage   bool
 	}{
 		{
 			name:              "valid aarch64 APK file",
@@ -80,7 +80,7 @@ func TestChartBuilder(t *testing.T) {
 			// For success cases
 			assert.NoError(t, err)
 			assert.NotNil(t, builder)
-			
+
 			// Ensure cleanup happens
 			defer func() {
 				if builder != nil {
@@ -110,7 +110,7 @@ func TestChartBuilder(t *testing.T) {
 				config, err := img.ConfigFile()
 				assert.NoError(t, err)
 				assert.NotNil(t, config)
-				
+
 				// Just verify config exists
 				assert.NotNil(t, config.Config)
 			}

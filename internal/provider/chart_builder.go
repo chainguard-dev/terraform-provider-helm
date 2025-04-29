@@ -22,7 +22,7 @@ import (
 	"helm.sh/helm/v3/pkg/chart"
 )
 
-// ChartBuilder manages APK file operations to build Helm charts
+// ChartBuilder manages APK file operations to build Helm charts.
 type ChartBuilder struct {
 	APKFilePath   string
 	RepositoryDir string
@@ -56,12 +56,12 @@ func NewChartBuilder(apkFilePath string) (*ChartBuilder, error) {
 	}, nil
 }
 
-// Cleanup removes the temporary extraction directory
+// Cleanup removes the temporary extraction directory.
 func (c *ChartBuilder) Cleanup() error {
 	return os.RemoveAll(c.RepositoryDir)
 }
 
-// findChartYaml locates and reads the Chart.yaml file from the APK
+// findChartYaml locates and reads the Chart.yaml file from the APK.
 func (c *ChartBuilder) findChartYaml() error {
 	// Use sync.Once to ensure we only do this initialization once
 	c.once.Do(func() {
@@ -127,7 +127,7 @@ func (c *ChartBuilder) findChartYaml() error {
 		}
 
 		if !found {
-			c.chartYamlErr = fmt.Errorf("Chart.yaml not found in APK package")
+			c.chartYamlErr = fmt.Errorf("failed: Chart.yaml not found in APK package")
 			return
 		}
 
@@ -142,7 +142,7 @@ func (c *ChartBuilder) findChartYaml() error {
 	return c.chartYamlErr
 }
 
-// GetChartMetadata extracts and returns the metadata from Chart.yaml
+// GetChartMetadata extracts and returns the metadata from Chart.yaml.
 func (c *ChartBuilder) GetChartMetadata() (*chart.Metadata, error) {
 	if c.metadata == nil {
 		if err := c.findChartYaml(); err != nil {
@@ -152,7 +152,7 @@ func (c *ChartBuilder) GetChartMetadata() (*chart.Metadata, error) {
 	return c.metadata, nil
 }
 
-// buildChartLayer creates a layer containing the Helm chart files
+// buildChartLayer creates a layer containing the Helm chart files.
 func (c *ChartBuilder) buildChartLayer() ([]byte, error) {
 	// First, make sure we have the Chart.yaml and chart directory
 	if c.metadata == nil {
@@ -248,7 +248,7 @@ func (c *ChartBuilder) buildChartLayer() ([]byte, error) {
 	return chartTarBuffer.Bytes(), nil
 }
 
-// AsImage converts the APK file to a Helm chart image
+// AsImage converts the APK file to a Helm chart image.
 func (c *ChartBuilder) AsImage() (*image.ChartImage, error) {
 	// Make sure we have chart metadata
 	if c.metadata == nil {

@@ -1,7 +1,7 @@
 terraform {
   required_providers {
     helm = {
-      source = "chainguard-dev/helm"
+      source  = "chainguard-dev/helm"
       version = "0.0.1"
     }
   }
@@ -23,8 +23,8 @@ resource "helm_chart" "istio_base_exact_version" {
 
 # Using package repository for istio-charts-base with latest version
 resource "helm_chart" "istio_base" {
-  repository      = "ttl.sh/tcnghia/test3"
-  package_name    = "istio-charts-base"
+  repository   = "ttl.sh/tcnghia/test3"
+  package_name = "istio-charts-base"
 }
 
 // These digests are useful to tag, after testing.

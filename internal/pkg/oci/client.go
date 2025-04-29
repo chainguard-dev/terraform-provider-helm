@@ -13,20 +13,20 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 )
 
-// Client defines the interface for OCI operations
+// Client defines the interface for OCI operations.
 type Client interface {
 	Push(repository, chartName, chartVersion string, img *image.ChartImage) (string, error)
 }
 
-// DefaultClient is the default implementation of Client
+// DefaultClient is the default implementation of Client.
 type DefaultClient struct{}
 
-// NewClient creates a new default OCI client
+// NewClient creates a new default OCI client.
 func NewClient() Client {
 	return &DefaultClient{}
 }
 
-// Push pushes the chart to the OCI registry using go-containerregistry
+// Push pushes the chart to the OCI registry using go-containerregistry.
 func (c *DefaultClient) Push(repository, chartName, chartVersion string, img *image.ChartImage) (string, error) {
 	// Create the reference for the image without a tag
 	// Use just the repository which already includes the registry

@@ -18,10 +18,10 @@ func TestFetchAPKPackage(t *testing.T) {
 	// Setup common test paths
 	repoPath, err := filepath.Abs("testdata/local-apk-repo/packages")
 	assert.NoError(t, err)
-	
+
 	keyPath, err := filepath.Abs("testdata/local-apk-repo/local-melange.rsa.pub")
 	assert.NoError(t, err)
-	
+
 	tests := []struct {
 		name           string
 		packageName    string
@@ -68,12 +68,12 @@ func TestFetchAPKPackage(t *testing.T) {
 			expectError:    false,
 		},
 	}
-	
+
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
 			diags := diag.Diagnostics{}
-			
+
 			// Fetch the package
 			tempApkFile, cleanup, err := fetchAPKPackage(
 				ctx,
@@ -84,14 +84,14 @@ func TestFetchAPKPackage(t *testing.T) {
 				[]string{keyPath},
 				&diags,
 			)
-			
+
 			// Ensure cleanup happens
 			defer func() {
 				if cleanup != nil {
 					cleanup()
 				}
 			}()
-			
+
 			if tc.expectError {
 				assert.Error(t, err)
 				if tc.errorContains != "" {
@@ -106,7 +106,7 @@ func TestFetchAPKPackage(t *testing.T) {
 	}
 }
 
-// Helper function to create string pointers
+// Helper function to create string pointers.
 func stringPtr(s string) *string {
 	return &s
 }
