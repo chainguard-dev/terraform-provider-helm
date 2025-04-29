@@ -4,7 +4,6 @@
 variable "registry" {
   description = "Registry URL prefix for chart repositories"
   type        = string
-  default     = "ttl.sh/tcnghia"
 }
 
 terraform {
