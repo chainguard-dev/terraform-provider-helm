@@ -43,3 +43,7 @@ output "istio_base_exact_version_digest" {
 output "istio_base_digest" {
   value = helm_chart.istio_base.digest
 }
+
+output "istio_base_ref" {
+  value = resource.helm_chart.istio_base.id
+}

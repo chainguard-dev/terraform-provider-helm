@@ -49,13 +49,11 @@ jobs:
 
       - name: Set up k3d
         uses: chainguard-dev/actions/setup-k3d@main
+        
+      - name: Set up Helm
+        uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112 # v4.3.0
 
       - name: Run e2e tests
         run: |
           cd e2e-tests
           ./e2e.sh
-
-      - name: Cleanup
-        if: always()
-        run: |
-          k3d registry delete registry.localhost || true
