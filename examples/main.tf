@@ -24,14 +24,14 @@ provider "helm" {
 
 # Using package repository for istio-charts-base with specific version
 resource "helm_chart" "istio_base_exact_version" {
-  repository      = "${var.registry}/test1"
+  repo            = "${var.registry}/test1"
   package_name    = "istio-charts-base"
   package_version = "1.20.3-r0"
 }
 
 # Using package repository for istio-charts-base with latest version
 resource "helm_chart" "istio_base" {
-  repository   = "${var.registry}/test3"
+  repo         = "${var.registry}/test3"
   package_name = "istio-charts-base"
 }
 

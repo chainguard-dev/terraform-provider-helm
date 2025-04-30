@@ -8,8 +8,11 @@ package provider
 import (
 	"context"
 	"os"
+	"time"
 
-	"github.com/chainguard-dev/terraform-oci-helm/internal/pkg/oci"
+	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/v1/google"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
@@ -26,16 +29,14 @@ var (
 func New(version string) func() provider.Provider {
 	return func() provider.Provider {
 		return &helmProvider{
-			version:   version,
-			ociClient: oci.NewClient(),
+			version: version,
 		}
 	}
 }
 
 // helmProvider is the provider implementation.
 type helmProvider struct {
-	version   string
-	ociClient oci.Client
+	version string
 }
 
 // Metadata returns the provider type name.
@@ -105,11 +106,24 @@ func (p *helmProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 
 	// Configuration is complete, no logging needed
 
+	kc := authn.NewMultiKeychain(google.Keychain, authn.RefreshingKeychain(authn.DefaultKeychain, 30*time.Minute))
+	ropts := []remote.Option{
+		remote.WithAuthFromKeychain(kc),
+		remote.WithUserAgent("terraform-provider-helm/" + p.version),
+	}
+
+	pusher, err := remote.NewPusher(ropts...)
+	if err != nil {
+		resp.Diagnostics.AddError("Configure []remote.Option", err.Error())
+		return
+	}
+	ropts = append(ropts, remote.Reuse(pusher))
+
 	// Make the OCI client available during Resource and DataSource Configure methods
 	client := &helmClient{
 		packageRepository:        packageRepository,
 		packageRepositoryPubKeys: packageRepositoryPubKeys,
-		ociClient:                p.ociClient,
+		ropts:                    ropts,
 	}
 
 	resp.DataSourceData = client
@@ -132,5 +146,5 @@ func (p *helmProvider) Resources(_ context.Context) []func() resource.Resource {
 type helmClient struct {
 	packageRepository        string
 	packageRepositoryPubKeys []string
-	ociClient                oci.Client
+	ropts                    []remote.Option
 }

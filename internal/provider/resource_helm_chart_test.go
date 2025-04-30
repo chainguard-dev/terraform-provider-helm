@@ -1,0 +1,130 @@
+/*
+Copyright 2025 Chainguard, Inc.
+SPDX-License-Identifier: Apache-2.0
+*/
+
+package provider_test
+
+import (
+	"fmt"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	helmprovider "github.com/chainguard-dev/terraform-provider-helm/internal/provider"
+	"github.com/chainguard-dev/terraform-provider-helm/internal/testutil"
+	registry "github.com/google/go-containerregistry/pkg/registry"
+	"github.com/hashicorp/terraform-plugin-framework/providerserver"
+	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
+	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
+)
+
+var testAccProtoV6ProviderFactories = map[string]func() (tfprotov6.ProviderServer, error){
+	"helm": providerserver.NewProtocol6WithError(helmprovider.New("dev")()),
+}
+
+func TestAccHelmChartResource(t *testing.T) {
+	registryServer := httptest.NewServer(registry.New())
+	defer registryServer.Close()
+
+	resourceName := "helm_chart.test"
+	serverURL := strings.TrimPrefix(registryServer.URL, "http://")
+	portPart := strings.Split(serverURL, ":")[1]
+	repoURL := fmt.Sprintf("localhost:%s/test-repo", portPart)
+
+	testCases := map[string]resource.TestCase{
+		"basic package": {
+			ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+			Steps: []resource.TestStep{
+				{
+					Config: testAccHelmChartConfig(repoURL, "chart-basic"),
+					Check: resource.ComposeAggregateTestCheckFunc(
+						resource.TestCheckResourceAttr(resourceName, "package_name", "chart-basic"),
+						resource.TestCheckResourceAttr(resourceName, "repo", repoURL),
+						resource.TestCheckResourceAttrSet(resourceName, "digest"),
+						resource.TestCheckResourceAttrSet(resourceName, "name"),
+						resource.TestCheckResourceAttrSet(resourceName, "chart_version"),
+						testAccCheckHelmChartExists(resourceName, "basic"),
+					),
+				},
+			},
+		},
+		"basic library package": {
+			ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+			Steps: []resource.TestStep{
+				{
+					Config: testAccHelmChartConfig(repoURL, "chart-basiclibrary"),
+					Check: resource.ComposeAggregateTestCheckFunc(
+						resource.TestCheckResourceAttr(resourceName, "package_name", "chart-basiclibrary"),
+						resource.TestCheckResourceAttr(resourceName, "repo", repoURL),
+						resource.TestCheckResourceAttrSet(resourceName, "digest"),
+						resource.TestCheckResourceAttrSet(resourceName, "name"),
+						resource.TestCheckResourceAttrSet(resourceName, "chart_version"),
+						testAccCheckHelmChartExists(resourceName, "basiclib"),
+					),
+				},
+			},
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			resource.Test(t, tc)
+		})
+	}
+}
+
+func testAccHelmChartConfig(repo, packageName string) string {
+	return fmt.Sprintf(`
+provider "helm" {
+  package_repository = "../../testdata/packages"
+  package_repository_pub_keys = ["../../testdata/packages/melange.rsa.pub"]
+}
+
+resource "helm_chart" "test" {
+  repo         = %q
+  package_name = %q
+}
+`, repo, packageName)
+}
+
+// testAccCheckHelmChartExists verifies the chart was pushed correctly by using
+// helm libraries to pull and template the chart.
+func testAccCheckHelmChartExists(resourceName, expectedChartName string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[resourceName]
+		if !ok {
+			return fmt.Errorf("Not found: %s", resourceName)
+		}
+
+		if rs.Primary.ID == "" {
+			return fmt.Errorf("No chart ID is set")
+		}
+
+		// Extract chart reference from state
+		repo := rs.Primary.Attributes["repo"]
+		digest := rs.Primary.Attributes["digest"]
+
+		// Construct OCI reference
+		ociRef := fmt.Sprintf("oci://%s@%s", repo, digest)
+
+		// Use shared test utility to pull and template the chart
+		helmChart, rel, err := testutil.TestPullAndTemplateChart(ociRef, expectedChartName, false)
+		if err != nil {
+			return err
+		}
+
+		// For library charts, we only validate the chart was loaded properly
+		if helmChart.Metadata.Type == "library" {
+			return nil
+		}
+
+		// Validate the templating result
+		if rel.Info.Status != "pending-install" {
+			return fmt.Errorf("Expected pending-install status but got %s", rel.Info.Status)
+		}
+
+		return nil
+	}
+}
