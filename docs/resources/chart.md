@@ -18,7 +18,7 @@ Manages a Helm chart in an OCI registry from an APK package.
 ### Required
 
 - `package_name` (String) The name of the package to fetch from the package repository.
-- `repository` (String) The repository in the OCI registry where the Helm chart will be pushed.
+- `repo` (String) The repo in the OCI registry where the Helm chart will be pushed.
 
 ### Optional
 
@@ -27,7 +27,7 @@ Manages a Helm chart in an OCI registry from an APK package.
 
 ### Read-Only
 
+- `chart_version` (String) The chart version of the Helm chart extracted from the chart metadata.
 - `digest` (String) The SHA256 digest of the Helm chart after it is pushed to the registry.
 - `id` (String) Identifier for this resource.
 - `name` (String) The name of the Helm chart extracted from the chart metadata.
-- `version` (String) The version of the Helm chart extracted from the chart metadata.

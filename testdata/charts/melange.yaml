@@ -1,0 +1,40 @@
+package:
+  name: chart
+  version: "0.0.1"
+  epoch: 0
+  description: 
+
+environment:
+  contents:
+    repositories:
+      - "https://packages.wolfi.dev/os"
+    keyring:
+      - "https://packages.wolfi.dev/os/wolfi-signing.rsa.pub"
+    packages:
+      - busybox
+      - helm
+
+pipeline:
+  # Something needs to be here
+  - runs: exit 0
+
+data:
+  - name: charts
+    items:
+      basic: ""
+      basiclibrary: ""
+
+subpackages:
+  - name: ${{package.name}}-${{range.key}}
+    range: charts
+    pipeline:
+      - runs: |
+          cd ${{range.key}}
+
+          helm dependency update
+
+          ptmp=$(mktemp -d)
+          helm package . --destination=$ptmp \
+            --version=${{package.version}}
+
+          tar -xf $ptmp/*.tgz -C ${{targets.contextdir}}

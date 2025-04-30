@@ -30,7 +30,6 @@ jobs:
       matrix:
         # list whatever Terraform versions here you would like to support
         terraform:
-          - '1.9.*'
           - '1.10.*'
           - '1.11.*'
     steps:
@@ -50,5 +49,8 @@ jobs:
           terraform_wrapper: false
 
       - run: go mod download
-      - run: go test -v -cover ./internal/...
+      - run: go test -v -cover ./...
+        env:
+          TF_ACC: "1"
+          TF_LOG: "info"
         timeout-minutes: 10
