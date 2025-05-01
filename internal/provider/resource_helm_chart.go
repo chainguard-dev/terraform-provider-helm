@@ -16,7 +16,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
@@ -98,9 +97,7 @@ func (r *helmChartResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 			},
 			"package_arch": schema.StringAttribute{
 				Optional:    true,
-				Computed:    true,
-				Description: "The architecture of the package to fetch. If not specified, defaults to the current system architecture.",
-				Default:     stringdefault.StaticString(chart.DefaultArch),
+				Description: "The architecture of the package to fetch. If not specified, uses the provider default_arch or falls back to system defaults.",
 			},
 			"digest": schema.StringAttribute{
 				Computed:    true,
@@ -175,9 +172,16 @@ func (r *helmChartResource) Update(ctx context.Context, req resource.UpdateReque
 }
 
 func (r *helmChartResource) do(ctx context.Context, data *helmChartResourceModel) (ds diag.Diagnostics) {
+	arch := data.PackageArch.ValueString()
+	if arch == "" {
+		// Pull from the provider scoped default arch, if arch is still empty, the pkg default will be used
+		arch = r.client.defaultArch
+	}
+
 	ocichart, err := chart.Build(ctx, data.PackageName.ValueString(), &chart.BuildConfig{
-		Keys:         r.client.packageRepositoryPubKeys,
-		RuntimeRepos: []string{r.client.packageRepository},
+		Keys:         r.client.extraKeyrings,
+		RuntimeRepos: r.client.extraRepositories,
+		Arch:         arch,
 	})
 	if err != nil {
 		ds = append(ds, diag.NewErrorDiagnostic("building chart", err.Error()))

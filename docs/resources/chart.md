@@ -22,7 +22,7 @@ Manages a Helm chart in an OCI registry from an APK package.
 
 ### Optional
 
-- `package_arch` (String) The architecture of the package to fetch. If not specified, defaults to the current system architecture.
+- `package_arch` (String) The architecture of the package to fetch. If not specified, uses the provider default_arch or falls back to system defaults.
 - `package_version` (String) The version of the package to fetch from the package repository. If not specified, the latest available version will be used.
 
 ### Read-Only

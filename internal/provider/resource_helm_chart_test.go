@@ -78,8 +78,8 @@ func TestAccHelmChartResource(t *testing.T) {
 func testAccHelmChartConfig(repo, packageName string) string {
 	return fmt.Sprintf(`
 provider "helm" {
-  package_repository = "../../testdata/packages"
-  package_repository_pub_keys = ["../../testdata/packages/melange.rsa.pub"]
+  extra_repositories = ["../../testdata/packages"]
+  extra_keyrings = ["../../testdata/packages/melange.rsa.pub"]
 }
 
 resource "helm_chart" "test" {

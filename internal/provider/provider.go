@@ -7,7 +7,6 @@ package provider
 
 import (
 	"context"
-	"os"
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -50,14 +49,19 @@ func (p *helmProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp 
 	resp.Schema = schema.Schema{
 		Description: "The Helm provider offers resources to work with OCI Helm charts and APK repositories.",
 		Attributes: map[string]schema.Attribute{
-			"package_repository": schema.StringAttribute{
-				Description: "The URL of the package repository to use for fetching APK packages.",
+			"extra_repositories": schema.ListAttribute{
+				Description: "A list of URLs for package repositories to use for fetching APK packages.",
 				Optional:    true,
+				ElementType: types.StringType,
 			},
-			"package_repository_pub_keys": schema.ListAttribute{
+			"extra_keyrings": schema.ListAttribute{
 				Description: "A list of paths to package repository public keys for signature verification.",
 				Optional:    true,
 				ElementType: types.StringType,
+			},
+			"default_arch": schema.StringAttribute{
+				Description: "The default architecture to use for package fetching. Can be overridden at the resource level.",
+				Optional:    true,
 			},
 		},
 	}
@@ -65,8 +69,9 @@ func (p *helmProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp 
 
 // providerData can be used to store data from the Terraform configuration.
 type providerData struct {
-	PackageRepository        types.String `tfsdk:"package_repository"`
-	PackageRepositoryPubKeys types.List   `tfsdk:"package_repository_pub_keys"`
+	ExtraRepositories types.List   `tfsdk:"extra_repositories"`
+	ExtraKeyrings     types.List   `tfsdk:"extra_keyrings"`
+	DefaultArch       types.String `tfsdk:"default_arch"`
 }
 
 func (p *helmProvider) Configure(ctx context.Context, req provider.ConfigureRequest, resp *provider.ConfigureResponse) {
@@ -77,34 +82,36 @@ func (p *helmProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 		return
 	}
 
-	// Check environment variables for configuration
-	packageRepository := os.Getenv("PACKAGE_REPOSITORY")
+	extraRepositories := []string{}
+	extraKeyrings := []string{}
+	// Default arch is empty by default, will use chart.DefaultArch if not specified
+	defaultArch := ""
 
-	// Initialize empty keys slice
-	var packageRepositoryPubKeys []string
-
-	// Check for environment variable with keys
-	if envKey := os.Getenv("PACKAGE_REPOSITORY_PUB_KEY"); envKey != "" {
-		packageRepositoryPubKeys = append(packageRepositoryPubKeys, envKey)
-	}
-
-	if !config.PackageRepository.IsNull() {
-		packageRepository = config.PackageRepository.ValueString()
-	}
-
-	// Parse the keys from the list
-	if !config.PackageRepositoryPubKeys.IsNull() {
-		var keys []string
-		diags = config.PackageRepositoryPubKeys.ElementsAs(ctx, &keys, false)
+	if !config.ExtraRepositories.IsNull() {
+		var repos []string
+		diags = config.ExtraRepositories.ElementsAs(ctx, &repos, false)
 		resp.Diagnostics.Append(diags...)
 		if resp.Diagnostics.HasError() {
 			return
 		}
-		// Append keys from config to any from environment
-		packageRepositoryPubKeys = append(packageRepositoryPubKeys, keys...)
+		extraRepositories = append(extraRepositories, repos...)
 	}
 
-	// Configuration is complete, no logging needed
+	// Parse the keys from the list
+	if !config.ExtraKeyrings.IsNull() {
+		var keys []string
+		diags = config.ExtraKeyrings.ElementsAs(ctx, &keys, false)
+		resp.Diagnostics.Append(diags...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		extraKeyrings = append(extraKeyrings, keys...)
+	}
+
+	// Get default architecture if specified
+	if !config.DefaultArch.IsNull() {
+		defaultArch = config.DefaultArch.ValueString()
+	}
 
 	kc := authn.NewMultiKeychain(google.Keychain, authn.RefreshingKeychain(authn.DefaultKeychain, 30*time.Minute))
 	ropts := []remote.Option{
@@ -112,18 +119,24 @@ func (p *helmProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 		remote.WithUserAgent("terraform-provider-helm/" + p.version),
 	}
 
+	puller, err := remote.NewPuller(ropts...)
+	if err != nil {
+		resp.Diagnostics.AddError("Configure []remote.Option", err.Error())
+		return
+	}
 	pusher, err := remote.NewPusher(ropts...)
 	if err != nil {
 		resp.Diagnostics.AddError("Configure []remote.Option", err.Error())
 		return
 	}
-	ropts = append(ropts, remote.Reuse(pusher))
+	ropts = append(ropts, remote.Reuse(puller), remote.Reuse(pusher))
 
 	// Make the OCI client available during Resource and DataSource Configure methods
 	client := &helmClient{
-		packageRepository:        packageRepository,
-		packageRepositoryPubKeys: packageRepositoryPubKeys,
-		ropts:                    ropts,
+		extraRepositories: extraRepositories,
+		extraKeyrings:     extraKeyrings,
+		defaultArch:       defaultArch,
+		ropts:             ropts,
 	}
 
 	resp.DataSourceData = client
@@ -144,7 +157,8 @@ func (p *helmProvider) Resources(_ context.Context) []func() resource.Resource {
 
 // helmClient is a client to interact with OCI Helm charts.
 type helmClient struct {
-	packageRepository        string
-	packageRepositoryPubKeys []string
-	ropts                    []remote.Option
+	extraRepositories []string
+	extraKeyrings     []string
+	defaultArch       string
+	ropts             []remote.Option
 }

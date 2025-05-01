@@ -31,8 +31,8 @@ terraform {
 }
 
 provider "helm" {
-  package_repository = "https://packages.wolfi.dev/os"
-  package_repository_pub_keys = [
+  extra_repositories = ["https://packages.wolfi.dev/os"]
+  extra_keyrings = [
     "/path/to/wolfi-signing1.rsa.pub",
     "/path/to/wolfi-signing2.rsa.pub"
   ]
@@ -52,8 +52,8 @@ For using Wolfi APK files containing Helm charts:
 
 ```terraform
 provider "helm" {
-  package_repository = "https://packages.wolfi.dev/os"
-  package_repository_pub_keys = [
+  extra_repositories = ["https://packages.wolfi.dev/os"]
+  extra_keyrings = [
     "/path/to/wolfi-signing1.rsa.pub",
     "/path/to/wolfi-signing2.rsa.pub"
   ]
@@ -80,24 +80,46 @@ Configuration options:
 ```terraform
 provider "helm" {
   # Optional: For package repository support
-  package_repository = "https://packages.wolfi.dev/os"  # URL of the APK repository
-  package_repository_pub_keys = [
+  extra_repositories = ["https://packages.wolfi.dev/os"]  # List of URLs for APK repositories
+  extra_keyrings = [
     "/path/to/wolfi-signing1.rsa.pub",
     "/path/to/wolfi-signing2.rsa.pub"
   ]  # Paths to public keys for verification
+  default_arch = "aarch64"  # Optional default architecture for package fetching
 }
 ```
 
-You can also use environment variables for configuration:
-
-```sh
-export PACKAGE_REPOSITORY=https://packages.wolfi.dev/os
-export PACKAGE_REPOSITORY_PUB_KEYS="/path/to/wolfi-signing1.rsa.pub:/path/to/wolfi-signing2.rsa.pub"
-```
+You can also configure the provider directly in your Terraform code, as shown above.
 
 ## How It Works
 
 The provider extracts APK files, which are essentially tar.gz archives, and finds the Helm chart within the extracted contents. It reads the Chart.yaml to determine chart name and version, and then pushes the chart to the specified OCI registry.
+
+### Architecture Selection
+
+The provider has a hierarchy for determining which architecture to use when fetching packages:
+
+1. If a resource specifies `package_arch`, that value is used
+2. Otherwise, if the provider specifies `default_arch`, that value is used
+3. Otherwise, it falls back to the system default (currently "x86_64")
+
+Example of setting provider-level default architecture:
+
+```terraform
+provider "helm" {
+  default_arch = "aarch64"
+}
+```
+
+Example of overriding architecture at the resource level:
+
+```terraform
+resource "helm_chart" "example" {
+  repo         = "example/charts"
+  package_name = "example-chart"
+  package_arch = "arm64"  # This takes precedence over provider default_arch
+}
+```
 
 ### Package Repository Support
 
