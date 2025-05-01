@@ -16,10 +16,11 @@ terraform {
 }
 
 provider "helm" {
-  package_repository = "./local-apk-repo/packages"
-  package_repository_pub_keys = [
+  extra_repositories = ["./local-apk-repo/packages"]
+  extra_keyrings = [
     "./local-apk-repo/local-melange.rsa.pub"
   ]
+  default_arch = "amd64" # Set default architecture for all resources
 }
 
 # Using package repository for istio-charts-base with specific version
@@ -29,10 +30,11 @@ resource "helm_chart" "istio_base_exact_version" {
   package_version = "1.20.3-r0"
 }
 
-# Using package repository for istio-charts-base with latest version
+# Using package repository for istio-charts-base with latest version and overriding architecture
 resource "helm_chart" "istio_base" {
   repo         = "${var.registry}/test3"
   package_name = "istio-charts-base"
+  package_arch = "x86_64" # Overrides the provider's default_arch
 }
 
 // These digests are useful to tag, after testing.

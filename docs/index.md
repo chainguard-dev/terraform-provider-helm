@@ -17,5 +17,6 @@ The Helm provider offers resources to work with OCI Helm charts and APK reposito
 
 ### Optional
 
-- `package_repository` (String) The URL of the package repository to use for fetching APK packages.
-- `package_repository_pub_keys` (List of String) A list of paths to package repository public keys for signature verification.
+- `default_arch` (String) The default architecture to use for package fetching. Can be overridden at the resource level.
+- `extra_keyrings` (List of String) A list of paths to package repository public keys for signature verification.
+- `extra_repositories` (List of String) A list of URLs for package repositories to use for fetching APK packages.

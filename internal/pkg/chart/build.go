@@ -25,6 +25,7 @@ type BuildConfig struct {
 	Version      string
 	Keys         []string
 	RuntimeRepos []string
+	Arch         string
 }
 
 func Build(ctx context.Context, name string, config *BuildConfig) (Chart, error) {
@@ -106,7 +107,7 @@ func (c *BuildConfig) fetch(ctx context.Context, name string) (io.Reader, *helmc
 
 	pkgs, conflicts, err := bc.APK().ResolveWorld(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to resolve package: %w", err)
+		return nil, nil, fmt.Errorf("failed to resolve package: %w for arch %q", err, c.Arch)
 	}
 
 	if len(conflicts) > 0 {
@@ -180,11 +181,15 @@ func (c *BuildConfig) fetch(ctx context.Context, name string) (io.Reader, *helmc
 }
 
 func (c *BuildConfig) bc(ctx context.Context, name string) (*build.Context, error) {
+	if c.Arch == "" {
+		c.Arch = DefaultArch
+	}
+
 	ic := apkotypes.ImageConfiguration{
 		Contents: apkotypes.ImageContents{
 			Packages: []string{name},
 		},
-		Archs: []apkotypes.Architecture{apkotypes.ParseArchitecture(DefaultArch)},
+		Archs: []apkotypes.Architecture{apkotypes.ParseArchitecture(c.Arch)},
 	}
 
 	if c.Keys != nil {
@@ -196,7 +201,7 @@ func (c *BuildConfig) bc(ctx context.Context, name string) (*build.Context, erro
 	}
 
 	opts := []build.Option{
-		build.WithArch(apkotypes.ParseArchitecture(DefaultArch)),
+		build.WithArch(apkotypes.ParseArchitecture(c.Arch)),
 		build.WithImageConfiguration(ic),
 	}
 
