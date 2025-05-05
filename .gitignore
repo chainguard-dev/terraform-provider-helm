@@ -20,3 +20,6 @@ temp-extract/
 dev.tfrc
 examples/dev.tfrc
 terraform-provider-helm
+
+# Ignore federated GCP credentials.
+gha-creds-*.json
