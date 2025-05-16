@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 
 	"chainguard.dev/apko/pkg/apk/apk"
@@ -14,6 +15,7 @@ import (
 	"chainguard.dev/apko/pkg/build"
 	apkotypes "chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/tarfs"
+	jsonpatch "github.com/evanphx/json-patch/v5"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	helmchart "helm.sh/helm/v3/pkg/chart"
@@ -22,10 +24,11 @@ import (
 )
 
 type BuildConfig struct {
-	Version      string
-	Keys         []string
-	RuntimeRepos []string
-	Arch         string
+	Version            string
+	Keys               []string
+	RuntimeRepos       []string
+	Arch               string
+	JSONRFC6902Patches map[string]jsonpatch.Patch
 }
 
 func Build(ctx context.Context, name string, config *BuildConfig) (Chart, error) {
@@ -34,7 +37,7 @@ func Build(ctx context.Context, name string, config *BuildConfig) (Chart, error)
 		return nil, err
 	}
 
-	chartl, err := chartify(metadata, dr)
+	chartl, err := chartify(metadata, dr, config.JSONRFC6902Patches)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build chart layer: %w", err)
 	}
@@ -52,7 +55,7 @@ func Build(ctx context.Context, name string, config *BuildConfig) (Chart, error)
 // chartify takes a standard "apko" layer and mutates it to the format required by the Helm OCI format.
 // This essentially just "re-roots" the filesystem to the root where Chart.yaml is located.
 // It returns a new layer.
-func chartify(metadata *helmchart.Metadata, r io.Reader) (v1.Layer, error) {
+func chartify(metadata *helmchart.Metadata, r io.Reader, patches map[string]jsonpatch.Patch) (v1.Layer, error) {
 	gr, err := gzip.NewReader(r)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create gzip reader: %w", err)
@@ -79,12 +82,60 @@ func chartify(metadata *helmchart.Metadata, r io.Reader) (v1.Layer, error) {
 			continue
 		}
 
-		if err := tw.WriteHeader(hdr); err != nil {
-			return nil, fmt.Errorf("error writing header: %w", err)
+		rel, err := filepath.Rel(metadata.Name, hdr.Name)
+		if err != nil {
+			return nil, fmt.Errorf("error getting relative path: %w", err)
 		}
 
-		if _, err := io.CopyN(tw, tr, hdr.Size); err != nil {
-			return nil, fmt.Errorf("error copying file: %w", err)
+		if p, ok := patches[rel]; ok {
+			// apply the patches before copying the file, unfortunately we have to
+			// buffer the whole file
+			raw, err := io.ReadAll(tr)
+			if err != nil {
+				return nil, fmt.Errorf("error reading file: %w", err)
+			}
+
+			var patched []byte
+			if strings.HasSuffix(rel, ".yaml") || strings.HasSuffix(rel, ".yml") {
+				jsonBytes, err := yaml.YAMLToJSON(raw)
+				if err != nil {
+					return nil, fmt.Errorf("error converting YAML to JSON: %w", err)
+				}
+
+				patchedJSON, err := p.Apply(jsonBytes)
+				if err != nil {
+					return nil, fmt.Errorf("error applying patch to JSON: %w", err)
+				}
+
+				patched, err = yaml.JSONToYAML(patchedJSON)
+				if err != nil {
+					return nil, fmt.Errorf("error converting JSON to YAML: %w", err)
+				}
+			} else {
+				// For non-YAML files, apply the patch directly
+				patched, err = p.Apply(raw)
+				if err != nil {
+					return nil, fmt.Errorf("error applying patch: %w", err)
+				}
+			}
+
+			hdr.Size = int64(len(patched))
+			if err := tw.WriteHeader(hdr); err != nil {
+				return nil, fmt.Errorf("error writing header for patched file: %w", err)
+			}
+
+			if _, err := io.CopyN(tw, bytes.NewReader(patched), hdr.Size); err != nil {
+				return nil, fmt.Errorf("error copying patched file: %w", err)
+			}
+		} else {
+			// Simnply copy the file as-is
+			if err := tw.WriteHeader(hdr); err != nil {
+				return nil, fmt.Errorf("error writing header: %w", err)
+			}
+
+			if _, err := io.CopyN(tw, tr, hdr.Size); err != nil {
+				return nil, fmt.Errorf("error copying file: %w", err)
+			}
 		}
 	}
 

@@ -4,6 +4,7 @@ go 1.24.2
 
 require (
 	chainguard.dev/apko v0.27.4
+	github.com/evanphx/json-patch/v5 v5.9.11
 	github.com/google/go-containerregistry v0.20.3
 	github.com/hashicorp/terraform-plugin-docs v0.21.0
 	github.com/hashicorp/terraform-plugin-framework v1.14.1
