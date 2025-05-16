@@ -66,6 +66,94 @@ func TestAccHelmChartResource(t *testing.T) {
 				},
 			},
 		},
+		"basic package with json patch": {
+			ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+			Steps: []resource.TestStep{
+				{
+					Config: fmt.Sprintf(`
+provider "helm" {
+  extra_repositories = ["../../testdata/packages"]
+  extra_keyrings = ["../../testdata/packages/melange.rsa.pub"]
+}
+
+resource "helm_chart" "test" {
+  repo         = %q
+  package_name = %q
+
+	json_patches = {
+		"values.yaml" = jsonencode([
+			{
+				op    = "replace"
+				path  = "/image/tag"
+				value = "notadonkey"
+			},
+			{
+				op    = "add"
+				path  = "/image/digest"
+				value = "deadbeef"
+			}
+		])
+	}
+}
+`, repoURL, "chart-basic"),
+					Check: resource.ComposeAggregateTestCheckFunc(
+						resource.TestCheckResourceAttr(resourceName, "package_name", "chart-basic"),
+						resource.TestCheckResourceAttr(resourceName, "repo", repoURL),
+						resource.TestCheckResourceAttrSet(resourceName, "digest"),
+						resource.TestCheckResourceAttrSet(resourceName, "name"),
+						resource.TestCheckResourceAttrSet(resourceName, "chart_version"),
+						func(s *terraform.State) error {
+							rs, ok := s.RootModule().Resources[resourceName]
+							if !ok {
+								return fmt.Errorf("Not found: %s", resourceName)
+							}
+
+							if rs.Primary.ID == "" {
+								return fmt.Errorf("No chart ID is set")
+							}
+
+							// Extract chart reference from state
+							repo := rs.Primary.Attributes["repo"]
+							digest := rs.Primary.Attributes["digest"]
+
+							// Construct OCI reference
+							ociRef := fmt.Sprintf("oci://%s@%s", repo, digest)
+
+							// Use shared test utility to pull and template the chart
+							helmChart, _, err := testutil.TestPullAndTemplateChart(ociRef, "basic", false)
+							if err != nil {
+								return err
+							}
+
+							imageMap, ok := helmChart.Values["image"].(map[string]interface{})
+							if !ok {
+								return fmt.Errorf("Expected image to be a map, but got %T", helmChart.Values["image"])
+							}
+
+							vtag, ok := imageMap["tag"].(string)
+							if !ok {
+								return fmt.Errorf("Expected image.tag to be a string, but got %T", imageMap["tag"])
+							}
+
+							if vtag != "notadonkey" {
+								return fmt.Errorf("Expected image.tag to be notadonkey but got %s", vtag)
+							}
+
+							vdigest, ok := imageMap["digest"].(string)
+							if !ok {
+								return fmt.Errorf("Expected image.digest to be a string, but got %T", imageMap["digest"])
+							}
+
+							if vdigest != "deadbeef" {
+								return fmt.Errorf("Expected image.digest to be deadbeef but got %s", digest)
+							}
+
+							return nil
+						},
+					),
+				},
+			},
+		},
 	}
 
 	for name, tc := range testCases {

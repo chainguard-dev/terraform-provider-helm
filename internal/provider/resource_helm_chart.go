@@ -10,6 +10,7 @@ import (
 	"fmt"
 
 	"github.com/chainguard-dev/terraform-provider-helm/internal/pkg/chart"
+	jsonpatch "github.com/evanphx/json-patch/v5"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -46,6 +47,7 @@ type helmChartResourceModel struct {
 	Digest         types.String `tfsdk:"digest"`
 	Name           types.String `tfsdk:"name"`
 	ChartVersion   types.String `tfsdk:"chart_version"`
+	JSONPatches    types.Map    `tfsdk:"json_patches"`
 }
 
 // Configure adds the provider configured client to the resource.
@@ -120,6 +122,11 @@ func (r *helmChartResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
+			"json_patches": schema.MapAttribute{
+				Optional:    true,
+				Description: "JSON RFC6902 patches to apply to the Helm chart, organized by the file to which the patch should be applied. Each file must contain the json representation of the JSON patch array to apply. It's easiest to use the jsonencode function to generate the JSON string.",
+				ElementType: types.StringType,
+			},
 		},
 	}
 }
@@ -178,10 +185,16 @@ func (r *helmChartResource) do(ctx context.Context, data *helmChartResourceModel
 		arch = r.client.defaultArch
 	}
 
+	patches, diags := toJsonPatch(ctx, data.JSONPatches)
+	if diags != nil {
+		return diags
+	}
+
 	ocichart, err := chart.Build(ctx, data.PackageName.ValueString(), &chart.BuildConfig{
-		Keys:         r.client.extraKeyrings,
-		RuntimeRepos: r.client.extraRepositories,
-		Arch:         arch,
+		Keys:               r.client.extraKeyrings,
+		RuntimeRepos:       r.client.extraRepositories,
+		Arch:               arch,
+		JSONRFC6902Patches: patches,
 	})
 	if err != nil {
 		ds = append(ds, diag.NewErrorDiagnostic("building chart", err.Error()))
@@ -235,4 +248,30 @@ func (r *helmChartResource) Delete(ctx context.Context, req resource.DeleteReque
 
 	// Note: Most OCI registries don't support deletion via API, so this is a no-op
 	// We just remove it from Terraform state
+}
+
+func toJsonPatch(ctx context.Context, tpatches types.Map) (map[string]jsonpatch.Patch, diag.Diagnostics) {
+	var diags diag.Diagnostics
+
+	patches := make(map[string]jsonpatch.Patch)
+
+	if tpatches.IsNull() || tpatches.IsUnknown() {
+		return patches, diags
+	}
+
+	patchOps := make(map[string]string)
+	if diag := tpatches.ElementsAs(ctx, &patchOps, false); diag != nil {
+		return patches, diag
+	}
+
+	for filename, patchOps := range patchOps {
+		jp, err := jsonpatch.DecodePatch([]byte(patchOps))
+		if err != nil {
+			diags = append(diags, diag.NewErrorDiagnostic("error decoding patch", err.Error()))
+			continue
+		}
+		patches[filename] = jp
+	}
+
+	return patches, diags
 }

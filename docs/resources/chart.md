@@ -22,6 +22,7 @@ Manages a Helm chart in an OCI registry from an APK package.
 
 ### Optional
 
+- `json_patches` (Map of String) JSON RFC6902 patches to apply to the Helm chart, organized by the file to which the patch should be applied. Each file must contain the json representation of the JSON patch array to apply. It's easiest to use the jsonencode function to generate the JSON string.
 - `package_arch` (String) The architecture of the package to fetch. If not specified, uses the provider default_arch or falls back to system defaults.
 - `package_version` (String) The version of the package to fetch from the package repository. If not specified, the latest available version will be used.
 
