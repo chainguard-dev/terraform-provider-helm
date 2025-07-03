@@ -13,7 +13,9 @@ import (
 
 	helmprovider "github.com/chainguard-dev/terraform-provider-helm/internal/provider"
 	"github.com/chainguard-dev/terraform-provider-helm/internal/testutil"
+	"github.com/google/go-containerregistry/pkg/name"
 	registry "github.com/google/go-containerregistry/pkg/registry"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
@@ -125,6 +127,15 @@ resource "helm_chart" "test" {
 								return err
 							}
 
+							lref, err := name.ParseReference(fmt.Sprintf("%s:latest", repo))
+							if err != nil {
+								return fmt.Errorf("Failed to parse latest ref: %v", err)
+							}
+							_, err = remote.Head(lref)
+							if err == nil {
+								return fmt.Errorf("Expected 'latest' tag to not exist, but it was found")
+							}
+
 							imageMap, ok := helmChart.Values["image"].(map[string]interface{})
 							if !ok {
 								return fmt.Errorf("Expected image to be a map, but got %T", helmChart.Values["image"])
@@ -201,6 +212,16 @@ func testAccCheckHelmChartExists(resourceName, expectedChartName string) resourc
 		helmChart, rel, err := testutil.TestPullAndTemplateChart(ociRef, expectedChartName, false)
 		if err != nil {
 			return err
+		}
+
+		// Verify that no "latest" tag exists using go-containerregistry
+		lref, err := name.ParseReference(fmt.Sprintf("%s:latest", repo))
+		if err != nil {
+			return fmt.Errorf("Failed to parse latest ref: %v", err)
+		}
+		_, err = remote.Head(lref)
+		if err == nil {
+			return fmt.Errorf("Expected 'latest' tag to not exist, but it was found")
 		}
 
 		// For library charts, we only validate the chart was loaded properly

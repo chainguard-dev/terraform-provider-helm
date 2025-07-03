@@ -215,17 +215,17 @@ func (r *helmChartResource) do(ctx context.Context, data *helmChartResourceModel
 		return ds
 	}
 
-	if err := remote.Write(ref, ocichart, r.client.ropts...); err != nil {
-		ds = append(ds, diag.NewErrorDiagnostic("pushing chart to registry", err.Error()))
-		return ds
-	}
-
 	digest, err := ocichart.Digest()
 	if err != nil {
 		ds = append(ds, diag.NewErrorDiagnostic("getting chart digest", err.Error()))
 		return ds
 	}
 	data.Digest = types.StringValue(digest.String())
+
+	if err := remote.Write(ref.Context().Digest(digest.String()), ocichart, r.client.ropts...); err != nil {
+		ds = append(ds, diag.NewErrorDiagnostic("pushing chart to registry", err.Error()))
+		return ds
+	}
 
 	data.ID = types.StringValue(ref.Context().Digest(digest.String()).String())
 	return ds
