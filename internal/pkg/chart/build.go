@@ -248,7 +248,7 @@ func (c *BuildConfig) bc(ctx context.Context, name string) (*build.Context, erro
 	}
 
 	if c.RuntimeRepos != nil {
-		ic.Contents.RuntimeRepositories = c.RuntimeRepos
+		ic.Contents.Repositories = c.RuntimeRepos
 	}
 
 	opts := []build.Option{
