@@ -48,7 +48,7 @@ jobs:
           terraform_wrapper: false
 
       - name: Set up k3d
-        uses: chainguard-dev/actions/setup-k3d@1df2b5598adffbfe72a3abe9243d73e338bbb006 # v1.4.10
+        uses: chainguard-dev/actions/setup-k3d@7b18ea9960f945cabf19a84752e580829347f4ed # v1.5.4
 
       - name: Set up Helm
         uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112 # v4.3.0
