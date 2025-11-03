@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 	jsonpatch "github.com/evanphx/json-patch/v5"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
+	yamlpatch "github.com/palantir/pkg/yamlpatch"
 	helmchart "helm.sh/helm/v3/pkg/chart"
 	helmregistry "helm.sh/helm/v3/pkg/registry"
 	"sigs.k8s.io/yaml"
@@ -28,7 +30,7 @@ type BuildConfig struct {
 	Keys               []string
 	RuntimeRepos       []string
 	Arch               string
-	JSONRFC6902Patches map[string]jsonpatch.Patch
+	JSONRFC6902Patches map[string][]byte
 }
 
 func Build(ctx context.Context, name string, config *BuildConfig) (Chart, error) {
@@ -55,7 +57,7 @@ func Build(ctx context.Context, name string, config *BuildConfig) (Chart, error)
 // chartify takes a standard "apko" layer and mutates it to the format required by the Helm OCI format.
 // This essentially just "re-roots" the filesystem to the root where Chart.yaml is located.
 // It returns a new layer.
-func chartify(metadata *helmchart.Metadata, r io.Reader, patches map[string]jsonpatch.Patch) (v1.Layer, error) {
+func chartify(metadata *helmchart.Metadata, r io.Reader, patches map[string][]byte) (v1.Layer, error) {
 	gr, err := gzip.NewReader(r)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create gzip reader: %w", err)
@@ -95,28 +97,9 @@ func chartify(metadata *helmchart.Metadata, r io.Reader, patches map[string]json
 				return nil, fmt.Errorf("error reading file: %w", err)
 			}
 
-			var patched []byte
-			if strings.HasSuffix(rel, ".yaml") || strings.HasSuffix(rel, ".yml") {
-				jsonBytes, err := yaml.YAMLToJSON(raw)
-				if err != nil {
-					return nil, fmt.Errorf("error converting YAML to JSON: %w", err)
-				}
-
-				patchedJSON, err := p.Apply(jsonBytes)
-				if err != nil {
-					return nil, fmt.Errorf("error applying patch to JSON: %w", err)
-				}
-
-				patched, err = yaml.JSONToYAML(patchedJSON)
-				if err != nil {
-					return nil, fmt.Errorf("error converting JSON to YAML: %w", err)
-				}
-			} else {
-				// For non-YAML files, apply the patch directly
-				patched, err = p.Apply(raw)
-				if err != nil {
-					return nil, fmt.Errorf("error applying patch: %w", err)
-				}
+			patched, err := patchedWith(rel, raw, p)
+			if err != nil {
+				return nil, fmt.Errorf("error applying patch to file %s: %w", rel, err)
 			}
 
 			hdr.Size = int64(len(patched))
@@ -147,6 +130,32 @@ func chartify(metadata *helmchart.Metadata, r io.Reader, patches map[string]json
 		return io.NopCloser(bytes.NewReader(buf.Bytes())), nil
 	}, tarball.WithMediaType(helmregistry.ChartLayerMediaType))
 	return l, err
+}
+
+func patchedWith(filename string, original []byte, patchOps []byte) ([]byte, error) {
+	if strings.HasSuffix(filename, ".yaml") || strings.HasSuffix(filename, ".yml") {
+		var patch yamlpatch.Patch
+		if err := json.Unmarshal(patchOps, &patch); err != nil {
+			return nil, fmt.Errorf("error unmarshalling JSON patch to YAML patch: %w", err)
+		}
+
+		patched, err := yamlpatch.Apply(original, patch)
+		if err != nil {
+			return nil, fmt.Errorf("error applying YAML patch: %w", err)
+		}
+		return patched, nil
+	}
+
+	// For non-YAML files, use jsonpatch directly.
+	jp, err := jsonpatch.DecodePatch(patchOps)
+	if err != nil {
+		return nil, fmt.Errorf("error decoding JSON patch: %w", err)
+	}
+	patched, err := jp.Apply(original)
+	if err != nil {
+		return nil, fmt.Errorf("error applying JSON patch: %w", err)
+	}
+	return patched, nil
 }
 
 // fetch will find the chart and return a reader for the APK (the data section), along with its parsed Chart.yaml.
