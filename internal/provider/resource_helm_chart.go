@@ -250,10 +250,10 @@ func (r *helmChartResource) Delete(ctx context.Context, req resource.DeleteReque
 	// We just remove it from Terraform state
 }
 
-func toJsonPatch(ctx context.Context, tpatches types.Map) (map[string]jsonpatch.Patch, diag.Diagnostics) {
+func toJsonPatch(ctx context.Context, tpatches types.Map) (map[string][]byte, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
-	patches := make(map[string]jsonpatch.Patch)
+	patches := make(map[string][]byte)
 
 	if tpatches.IsNull() || tpatches.IsUnknown() {
 		return patches, diags
@@ -265,12 +265,12 @@ func toJsonPatch(ctx context.Context, tpatches types.Map) (map[string]jsonpatch.
 	}
 
 	for filename, patchOps := range patchOps {
-		jp, err := jsonpatch.DecodePatch([]byte(patchOps))
+		_, err := jsonpatch.DecodePatch([]byte(patchOps))
 		if err != nil {
 			diags = append(diags, diag.NewErrorDiagnostic("error decoding patch", err.Error()))
 			continue
 		}
-		patches[filename] = jp
+		patches[filename] = []byte(patchOps)
 	}
 
 	return patches, diags
