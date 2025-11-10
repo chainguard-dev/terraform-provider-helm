@@ -32,7 +32,7 @@ func TestPullAndTemplateChart(ociRef string, expectedChartName string, skipTempl
 
 	// Initialize action configuration
 	actionConfig := new(action.Configuration)
-	if err := actionConfig.Init(settings.RESTClientGetter(), settings.Namespace(), os.Getenv("HELM_DRIVER"), func(format string, v ...interface{}) {
+	if err := actionConfig.Init(settings.RESTClientGetter(), settings.Namespace(), os.Getenv("HELM_DRIVER"), func(format string, v ...any) {
 		fmt.Printf(format, v...)
 	}); err != nil {
 		return nil, nil, fmt.Errorf("failed to initialize action configuration: %w", err)

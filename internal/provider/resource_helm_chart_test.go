@@ -136,7 +136,7 @@ resource "helm_chart" "test" {
 								return fmt.Errorf("Expected 'latest' tag to not exist, but it was found")
 							}
 
-							imageMap, ok := helmChart.Values["image"].(map[string]interface{})
+							imageMap, ok := helmChart.Values["image"].(map[string]any)
 							if !ok {
 								return fmt.Errorf("Expected image to be a map, but got %T", helmChart.Values["image"])
 							}

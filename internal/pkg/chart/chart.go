@@ -3,6 +3,7 @@ package chart
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -104,9 +105,7 @@ func (c *chart) Manifest() (*v1.Manifest, error) {
 		m.Annotations["org.opencontainers.image.source"] = strings.Join(c.metadata.Sources, ",")
 	}
 
-	for k, v := range c.metadata.Annotations {
-		m.Annotations[k] = v
-	}
+	maps.Copy(m.Annotations, c.metadata.Annotations)
 
 	return m, nil
 }
