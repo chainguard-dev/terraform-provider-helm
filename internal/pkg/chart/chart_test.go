@@ -23,6 +23,7 @@ func TestBuild(t *testing.T) {
 	tests := []struct {
 		name        string
 		packageName string
+		patches     map[string][]byte
 		validate    func(t *testing.T, artifact chart.Chart)
 	}{
 		{
@@ -52,6 +53,39 @@ func TestBuild(t *testing.T) {
 			name:        "basic library",
 			packageName: "chart-basiclibrary",
 		},
+		{
+			name:        "Chart.yaml annotation patch",
+			packageName: "chart-basic",
+			patches: map[string][]byte{
+				"Chart.yaml": []byte(`[{"op": "add", "path": "/annotations/patched", "value": "patched-value"}]`),
+			},
+			validate: func(t *testing.T, artifact chart.Chart) {
+				m, err := artifact.Manifest()
+				if err != nil {
+					t.Fatalf("failed to get chart manifest: %v", err)
+				}
+
+				// Verify existing annotation is preserved
+				if m.Annotations["thisshould"] != "bepreserved" {
+					t.Errorf("existing annotation not preserved: %s", m.Annotations["thisshould"])
+				}
+
+				// Verify patched annotation appears in OCI manifest
+				if m.Annotations["patched"] != "patched-value" {
+					t.Errorf("patched annotation not in manifest, got %q", m.Annotations["patched"])
+				}
+
+				md, err := artifact.Metadata()
+				if err != nil {
+					t.Fatalf("failed to get chart metadata: %v", err)
+				}
+
+				// Verify patched annotation appears in metadata
+				if md.Annotations["patched"] != "patched-value" {
+					t.Errorf("patched annotation not in metadata, got %q", md.Annotations["patched"])
+				}
+			},
+		},
 	}
 
 	for _, tc := range tests {
@@ -60,8 +94,9 @@ func TestBuild(t *testing.T) {
 
 			// Build the chart
 			artifact, err := chart.Build(ctx, tc.packageName, &chart.BuildConfig{
-				RuntimeRepos: []string{"testdata/packages"},
-				Keys:         []string{"testdata/packages/melange.rsa.pub"},
+				RuntimeRepos:       []string{"testdata/packages"},
+				Keys:               []string{"testdata/packages/melange.rsa.pub"},
+				JSONRFC6902Patches: tc.patches,
 			})
 			if err != nil {
 				t.Fatalf("failed to build chart: %v", err)
