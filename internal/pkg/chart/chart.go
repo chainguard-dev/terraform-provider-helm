@@ -14,12 +14,6 @@ import (
 	helmregistry "helm.sh/helm/v3/pkg/registry"
 )
 
-const (
-	// DefaultArch is a placeholder for building a single arch. Since "arch"
-	// doesn't really make sense for helm charts, we pick the more common one.
-	DefaultArch = "x86_64"
-)
-
 // Chart defines a compatbile Helm OCI artifact.
 type Chart interface {
 	v1.Image
