@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"chainguard.dev/apko/pkg/apk/apk"
@@ -257,7 +258,7 @@ func (c *BuildConfig) fetch(ctx context.Context, name string) (io.Reader, string
 
 func (c *BuildConfig) bc(ctx context.Context, name string) (*build.Context, error) {
 	if c.Arch == "" {
-		c.Arch = DefaultArch
+		c.Arch = apkotypes.ParseArchitecture(runtime.GOARCH).ToAPK()
 	}
 
 	ic := apkotypes.ImageConfiguration{
