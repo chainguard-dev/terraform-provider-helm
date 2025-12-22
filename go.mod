@@ -3,7 +3,7 @@ module github.com/chainguard-dev/terraform-provider-helm
 go 1.25.3
 
 require (
-	chainguard.dev/apko v0.30.31
+	chainguard.dev/apko v0.30.34
 	github.com/evanphx/json-patch/v5 v5.9.11
 	github.com/google/go-containerregistry v0.20.7
 	github.com/hashicorp/terraform-plugin-docs v0.24.0
