@@ -48,6 +48,7 @@ type helmChartResourceModel struct {
 	Name           types.String `tfsdk:"name"`
 	ChartVersion   types.String `tfsdk:"chart_version"`
 	JSONPatches    types.Map    `tfsdk:"json_patches"`
+	Images         types.Map    `tfsdk:"images"`
 }
 
 // Configure adds the provider configured client to the resource.
@@ -127,6 +128,11 @@ func (r *helmChartResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 				Description: "JSON RFC6902 patches to apply to the Helm chart, organized by the file to which the patch should be applied. Each file must contain the json representation of the JSON patch array to apply. It's easiest to use the jsonencode function to generate the JSON string.",
 				ElementType: types.StringType,
 			},
+			"images": schema.MapAttribute{
+				Optional:    true,
+				Description: "Map of image IDs to full OCI references for resolving cg.json. When provided, the chart's values.yaml will be updated with the resolved image references.",
+				ElementType: types.StringType,
+			},
 		},
 	}
 }
@@ -190,11 +196,19 @@ func (r *helmChartResource) do(ctx context.Context, data *helmChartResourceModel
 		return diags
 	}
 
+	var images map[string]string
+	if !data.Images.IsNull() && !data.Images.IsUnknown() {
+		if diags := data.Images.ElementsAs(ctx, &images, false); diags != nil {
+			return diags
+		}
+	}
+
 	ocichart, err := chart.Build(ctx, data.PackageName.ValueString(), &chart.BuildConfig{
 		Keys:               r.client.extraKeyrings,
 		RuntimeRepos:       r.client.extraRepositories,
 		Arch:               arch,
 		JSONRFC6902Patches: patches,
+		Images:             images,
 	})
 	if err != nil {
 		ds = append(ds, diag.NewErrorDiagnostic("building chart", err.Error()))

@@ -23,6 +23,7 @@ data:
     items:
       basic: ""
       basiclibrary: ""
+      withimages: ""
 
 subpackages:
   - name: ${{package.name}}-${{range.key}}
