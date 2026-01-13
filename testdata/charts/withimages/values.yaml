@@ -1,0 +1,16 @@
+# Default values for test chart
+image:
+  # Image registry
+  registry: docker.io
+  # Image repository
+  repository: library/nginx
+  # Image tag
+  tag: latest
+  # Image digest
+  digest: ""
+
+sidecar:
+  image:
+    registry: docker.io
+    repository: library/redis
+    tag: latest

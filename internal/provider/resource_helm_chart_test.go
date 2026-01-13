@@ -165,6 +165,92 @@ resource "helm_chart" "test" {
 				},
 			},
 		},
+		"package with images": {
+			ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+			Steps: []resource.TestStep{
+				{
+					Config: fmt.Sprintf(`
+provider "helm" {
+  extra_repositories = ["../../testdata/packages"]
+  extra_keyrings = ["../../testdata/packages/melange.rsa.pub"]
+}
+
+resource "helm_chart" "test" {
+  repo         = %q
+  package_name = %q
+
+  images = {
+    "main"    = "cgr.dev/chainguard/nginx:v1.0@sha256:abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234"
+    "sidecar" = "cgr.dev/chainguard/redis:v2.0@sha256:beef5678beef5678beef5678beef5678beef5678beef5678beef5678beef5678"
+  }
+}
+`, repoURL, "chart-withimages"),
+					Check: resource.ComposeAggregateTestCheckFunc(
+						resource.TestCheckResourceAttr(resourceName, "package_name", "chart-withimages"),
+						resource.TestCheckResourceAttr(resourceName, "repo", repoURL),
+						resource.TestCheckResourceAttrSet(resourceName, "digest"),
+						func(s *terraform.State) error {
+							rs, ok := s.RootModule().Resources[resourceName]
+							if !ok {
+								return fmt.Errorf("Not found: %s", resourceName)
+							}
+
+							repo := rs.Primary.Attributes["repo"]
+							digest := rs.Primary.Attributes["digest"]
+							ociRef := fmt.Sprintf("oci://%s@%s", repo, digest)
+
+							helmChart, _, err := testutil.TestPullAndTemplateChart(ociRef, "withimages", false)
+							if err != nil {
+								return err
+							}
+
+							// Check main image values were resolved
+							imageMap, ok := helmChart.Values["image"].(map[string]any)
+							if !ok {
+								return fmt.Errorf("Expected image to be a map, got %T", helmChart.Values["image"])
+							}
+
+							if imageMap["registry"] != "cgr.dev" {
+								return fmt.Errorf("Expected image.registry=cgr.dev, got %v", imageMap["registry"])
+							}
+							if imageMap["repository"] != "chainguard/nginx" {
+								return fmt.Errorf("Expected image.repository=chainguard/nginx, got %v", imageMap["repository"])
+							}
+							if imageMap["tag"] != "v1.0" {
+								return fmt.Errorf("Expected image.tag=v1.0, got %v", imageMap["tag"])
+							}
+							if imageMap["digest"] != "sha256:abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234" {
+								return fmt.Errorf("Expected image.digest=sha256:abcd..., got %v", imageMap["digest"])
+							}
+
+							// Check sidecar image values were resolved
+							sidecarMap, ok := helmChart.Values["sidecar"].(map[string]any)
+							if !ok {
+								return fmt.Errorf("Expected sidecar to be a map, got %T", helmChart.Values["sidecar"])
+							}
+							sidecarImage, ok := sidecarMap["image"].(map[string]any)
+							if !ok {
+								return fmt.Errorf("Expected sidecar.image to be a map, got %T", sidecarMap["image"])
+							}
+
+							if sidecarImage["registry"] != "cgr.dev" {
+								return fmt.Errorf("Expected sidecar.image.registry=cgr.dev, got %v", sidecarImage["registry"])
+							}
+							if sidecarImage["repository"] != "chainguard/redis" {
+								return fmt.Errorf("Expected sidecar.image.repository=chainguard/redis, got %v", sidecarImage["repository"])
+							}
+							// pseudo_tag should be "v2.0@sha256:beef..."
+							expectedPseudoTag := "v2.0@sha256:beef5678beef5678beef5678beef5678beef5678beef5678beef5678beef5678"
+							if sidecarImage["tag"] != expectedPseudoTag {
+								return fmt.Errorf("Expected sidecar.image.tag=%s, got %v", expectedPseudoTag, sidecarImage["tag"])
+							}
+
+							return nil
+						},
+					),
+				},
+			},
+		},
 	}
 
 	for name, tc := range testCases {

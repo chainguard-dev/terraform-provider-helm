@@ -4,6 +4,7 @@ go 1.25.3
 
 require (
 	chainguard.dev/apko v0.30.34
+	chainguard.dev/sdk v0.1.46
 	github.com/evanphx/json-patch/v5 v5.9.11
 	github.com/google/go-containerregistry v0.20.7
 	github.com/hashicorp/terraform-plugin-docs v0.24.0
@@ -17,7 +18,6 @@ require (
 
 require (
 	chainguard.dev/go-grpc-kit v0.17.15 // indirect
-	chainguard.dev/sdk v0.1.45 // indirect
 	cloud.google.com/go/auth v0.17.0 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect

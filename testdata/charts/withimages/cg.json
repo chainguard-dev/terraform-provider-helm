@@ -1,0 +1,25 @@
+{
+  "images": {
+    "main": {
+      "values": {
+        "image": {
+          "registry": "${registry}",
+          "repository": "${repo}",
+          "tag": "${tag}",
+          "digest": "${digest}"
+        }
+      }
+    },
+    "sidecar": {
+      "values": {
+        "sidecar": {
+          "image": {
+            "registry": "${registry}",
+            "repository": "${repo}",
+            "tag": "${pseudo_tag}"
+          }
+        }
+      }
+    }
+  }
+}

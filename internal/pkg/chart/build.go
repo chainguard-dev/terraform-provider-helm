@@ -18,6 +18,7 @@ import (
 	"chainguard.dev/apko/pkg/build"
 	apkotypes "chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/tarfs"
+	"chainguard.dev/sdk/helm/images"
 	jsonpatch "github.com/evanphx/json-patch/v5"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
@@ -33,15 +34,16 @@ type BuildConfig struct {
 	RuntimeRepos       []string
 	Arch               string
 	JSONRFC6902Patches map[string][]byte
+	Images             map[string]string
 }
 
 func Build(ctx context.Context, name string, config *BuildConfig) (Chart, error) {
-	dr, chartName, err := config.fetch(ctx, name)
+	cd, err := config.fetch(ctx, name)
 	if err != nil {
 		return nil, err
 	}
 
-	chartl, metadata, err := chartify(chartName, dr, config.JSONRFC6902Patches)
+	chartl, metadata, err := chartify(cd, config.JSONRFC6902Patches, config.Images)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build chart layer: %w", err)
 	}
@@ -58,9 +60,9 @@ func Build(ctx context.Context, name string, config *BuildConfig) (Chart, error)
 
 // chartify takes a standard "apko" layer and mutates it to the format required by the Helm OCI format.
 // This essentially just "re-roots" the filesystem to the root where Chart.yaml is located.
-// It returns a new layer and the (possibly patched) chart metadata.
-func chartify(chartName string, r io.Reader, patches map[string][]byte) (v1.Layer, *helmchart.Metadata, error) {
-	gr, err := gzip.NewReader(r)
+// If imageRefs and mapping are provided, it resolves the image values and merges into values.yaml.
+func chartify(cd *chartData, patches map[string][]byte, imageRefs map[string]string) (v1.Layer, *helmchart.Metadata, error) {
+	gr, err := gzip.NewReader(cd.data)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create gzip reader: %w", err)
 	}
@@ -68,7 +70,6 @@ func chartify(chartName string, r io.Reader, patches map[string][]byte) (v1.Laye
 
 	tr := tar.NewReader(gr)
 
-	// create a new tar writer in mem, we never really expect a chart to be large
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 
@@ -83,30 +84,35 @@ func chartify(chartName string, r io.Reader, patches map[string][]byte) (v1.Laye
 			return nil, nil, fmt.Errorf("error reading tar: %w", err)
 		}
 
-		// if the file is rooted in /<chart-name>, copy it to the new layer in /
-		if !strings.HasPrefix(hdr.Name, chartName+"/") {
+		if !strings.HasPrefix(hdr.Name, cd.name+"/") {
 			continue
 		}
 
-		rel, err := filepath.Rel(chartName, hdr.Name)
+		rel, err := filepath.Rel(cd.name, hdr.Name)
 		if err != nil {
 			return nil, nil, fmt.Errorf("error getting relative path: %w", err)
 		}
 
 		p, needsPatch := patches[rel]
+		needsResolve := rel == "values.yaml" && cd.mapping != nil && len(imageRefs) > 0
 
-		// For files that need patching or Chart.yaml, we need to buffer the content
-		if needsPatch || rel == "Chart.yaml" {
-			raw, err := io.ReadAll(tr)
+		if needsPatch || needsResolve || rel == "Chart.yaml" {
+			content, err := io.ReadAll(tr)
 			if err != nil {
 				return nil, nil, fmt.Errorf("error reading file: %w", err)
 			}
 
-			content := raw
 			if needsPatch {
-				content, err = patchedWith(rel, raw, p)
+				content, err = patchedWith(rel, content, p)
 				if err != nil {
 					return nil, nil, fmt.Errorf("error applying patch to file %s: %w", rel, err)
+				}
+			}
+
+			if needsResolve {
+				content, err = cd.mapping.Resolve(imageRefs, bytes.NewReader(content))
+				if err != nil {
+					return nil, nil, fmt.Errorf("error resolving image values: %w", err)
 				}
 			}
 
@@ -120,16 +126,13 @@ func chartify(chartName string, r io.Reader, patches map[string][]byte) (v1.Laye
 			if err := tw.WriteHeader(hdr); err != nil {
 				return nil, nil, fmt.Errorf("error writing header: %w", err)
 			}
-
 			if _, err := io.CopyN(tw, bytes.NewReader(content), hdr.Size); err != nil {
 				return nil, nil, fmt.Errorf("error copying file: %w", err)
 			}
 		} else {
-			// Simply copy the file as-is
 			if err := tw.WriteHeader(hdr); err != nil {
 				return nil, nil, fmt.Errorf("error writing header: %w", err)
 			}
-
 			if _, err := io.CopyN(tw, tr, hdr.Size); err != nil {
 				return nil, nil, fmt.Errorf("error copying file: %w", err)
 			}
@@ -176,20 +179,26 @@ func patchedWith(filename string, original []byte, patchOps []byte) ([]byte, err
 	return patched, nil
 }
 
-// fetch will find the chart and return a reader for the APK (the data section), along with the chart name.
-func (c *BuildConfig) fetch(ctx context.Context, name string) (io.Reader, string, error) {
+type chartData struct {
+	name    string
+	mapping *images.Mapping
+	data    *bytes.Buffer
+}
+
+// fetch fetches the chart APK and parses its metadata.
+func (c *BuildConfig) fetch(ctx context.Context, name string) (*chartData, error) {
 	bc, err := c.bc(ctx, name)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
 	pkgs, conflicts, err := bc.APK().ResolveWorld(ctx)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to resolve package: %w for arch %q", err, c.Arch)
+		return nil, fmt.Errorf("failed to resolve package: %w for arch %q", err, c.Arch)
 	}
 
 	if len(conflicts) > 0 {
-		return nil, "", fmt.Errorf("package conflicts detected: %v", conflicts)
+		return nil, fmt.Errorf("package conflicts detected: %v", conflicts)
 	}
 
 	var chartPkg *apk.RepositoryPackage
@@ -202,58 +211,68 @@ func (c *BuildConfig) fetch(ctx context.Context, name string) (io.Reader, string
 
 	rc, err := bc.APK().FetchPackage(ctx, chartPkg)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to download package: %w", err)
+		return nil, fmt.Errorf("failed to download package: %w", err)
 	}
 	defer rc.Close()
 
 	parts, err := expandapk.Split(rc)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to split APK: %w", err)
+		return nil, fmt.Errorf("failed to split APK: %w", err)
 	}
 
 	datar := parts[len(parts)-1]
 
 	var databuf bytes.Buffer
 	if _, err := io.Copy(&databuf, datar); err != nil {
-		return nil, "", fmt.Errorf("failed to buffer data section: %w", err)
+		return nil, fmt.Errorf("failed to buffer data section: %w", err)
 	}
 
-	// Find the chart name by looking for <name>/Chart.yaml
 	gr, err := gzip.NewReader(bytes.NewReader(databuf.Bytes()))
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to create gzip reader: %w", err)
+		return nil, fmt.Errorf("failed to create gzip reader: %w", err)
 	}
 	defer gr.Close()
 
 	tr := tar.NewReader(gr)
 
 	var chartName string
+	var mapping *images.Mapping
+
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			return nil, "", fmt.Errorf("error reading tar: %w", err)
+			return nil, fmt.Errorf("error reading tar: %w", err)
 		}
 
-		if !strings.HasSuffix(hdr.Name, "/Chart.yaml") {
+		// Find chart name from Chart.yaml
+		if dir, ok := strings.CutSuffix(hdr.Name, "/Chart.yaml"); ok {
+			if !strings.Contains(dir, "/") {
+				chartName = dir
+			}
 			continue
 		}
 
-		// There may be multiple Chart.yaml files in the APK, but we only want the top-level one.
-		dir := strings.TrimSuffix(hdr.Name, "/Chart.yaml")
-		if !strings.Contains(dir, "/") {
-			chartName = dir
-			break
+		// Parse cg.json if present
+		if chartName != "" && hdr.Name == chartName+"/"+images.ChainguardChartMetadataFilename {
+			mapping, err = images.Parse(tr)
+			if err != nil {
+				return nil, fmt.Errorf("parsing %s: %w", images.ChainguardChartMetadataFilename, err)
+			}
 		}
 	}
 
 	if chartName == "" {
-		return nil, "", errors.New("package is missing Chart.yaml")
+		return nil, errors.New("package is missing Chart.yaml")
 	}
 
-	return bytes.NewReader(databuf.Bytes()), chartName, nil
+	return &chartData{
+		name:    chartName,
+		mapping: mapping,
+		data:    &databuf,
+	}, nil
 }
 
 func (c *BuildConfig) bc(ctx context.Context, name string) (*build.Context, error) {
