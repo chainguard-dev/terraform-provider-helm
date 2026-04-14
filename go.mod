@@ -12,7 +12,7 @@ require (
 	github.com/hashicorp/terraform-plugin-go v0.31.0
 	github.com/hashicorp/terraform-plugin-testing v1.15.0
 	github.com/palantir/pkg/yamlpatch v1.5.0
-	helm.sh/helm/v3 v3.20.1
+	helm.sh/helm/v3 v3.20.2
 	sigs.k8s.io/yaml v1.6.0
 )
 
