@@ -48,7 +48,7 @@ jobs:
           terraform_wrapper: false
 
       - name: Set up kind
-        uses: chainguard-dev/actions/setup-kind@f45211d3e8f9d2676c6b8cdd6a765435e06c819d # v1.6.13
+        uses: chainguard-dev/actions/setup-kind@de68b87302e6266db5fb5220246f8aa46fe94b67 # v1.6.14
 
       - name: Set up Helm
         uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
