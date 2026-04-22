@@ -3,7 +3,7 @@ module github.com/chainguard-dev/terraform-provider-helm
 go 1.25.7
 
 require (
-	chainguard.dev/apko v1.2.3
+	chainguard.dev/apko v1.2.6
 	chainguard.dev/sdk v0.1.52
 	github.com/evanphx/json-patch/v5 v5.9.11
 	github.com/google/go-containerregistry v0.21.5
@@ -200,7 +200,7 @@ require (
 	golang.org/x/text v0.36.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/tools v0.44.0 // indirect
-	google.golang.org/api v0.275.0 // indirect
+	google.golang.org/api v0.276.0 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260319201613-d00831a3d3e7 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260401024825-9d38bb4040a9 // indirect
@@ -214,7 +214,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/api v0.35.1 // indirect
 	k8s.io/apiextensions-apiserver v0.35.1 // indirect
-	k8s.io/apimachinery v0.35.3 // indirect
+	k8s.io/apimachinery v0.35.4 // indirect
 	k8s.io/apiserver v0.35.1 // indirect
 	k8s.io/cli-runtime v0.35.1 // indirect
 	k8s.io/client-go v0.35.1 // indirect
