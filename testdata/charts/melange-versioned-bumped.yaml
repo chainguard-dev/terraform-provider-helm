@@ -1,0 +1,27 @@
+package:
+  name: chart-versioned
+  version: "0.0.2"
+  epoch: 0
+  description: Bumped build of the versioned chart used to verify package_version pinning; companion to the chart-versioned subpackage produced by melange.yaml at 0.0.1-r0.
+
+environment:
+  contents:
+    repositories:
+      - "https://packages.wolfi.dev/os"
+    keyring:
+      - "https://packages.wolfi.dev/os/wolfi-signing.rsa.pub"
+    packages:
+      - busybox
+      - helm
+
+pipeline:
+  - runs: |
+      cd versioned
+
+      helm dependency update
+
+      ptmp=$(mktemp -d)
+      helm package . --destination=$ptmp \
+        --version=${{package.version}}
+
+      tar -xf $ptmp/*.tgz -C ${{targets.contextdir}}
