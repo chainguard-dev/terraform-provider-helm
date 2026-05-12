@@ -280,9 +280,14 @@ func (c *BuildConfig) bc(ctx context.Context, name string) (*build.Context, erro
 		c.Arch = apkotypes.ParseArchitecture(runtime.GOARCH).ToAPK()
 	}
 
+	pkg := name
+	if c.Version != "" {
+		pkg = fmt.Sprintf("%s=%s", name, c.Version)
+	}
+
 	ic := apkotypes.ImageConfiguration{
 		Contents: apkotypes.ImageContents{
-			Packages: []string{name},
+			Packages: []string{pkg},
 		},
 		Archs: []apkotypes.Architecture{apkotypes.ParseArchitecture(c.Arch)},
 	}

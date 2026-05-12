@@ -164,3 +164,40 @@ func TestBuild(t *testing.T) {
 		})
 	}
 }
+
+// testdata ships chart-versioned at both 0.0.1-r0 and 0.0.2-r0 specifically so
+// this test can pin to the older one and prove BuildConfig.Version isn't ignored.
+func TestBuildVersionPin(t *testing.T) {
+	tests := []struct {
+		name             string
+		version          string
+		wantChartVersion string
+	}{
+		{name: "pin to older version", version: "0.0.1-r0", wantChartVersion: "0.0.1"},
+		{name: "pin to newer version", version: "0.0.2-r0", wantChartVersion: "0.0.2"},
+		{name: "no pin resolves to latest", version: "", wantChartVersion: "0.0.2"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			artifact, err := chart.Build(t.Context(), "chart-versioned", &chart.BuildConfig{
+				RuntimeRepos: []string{"testdata/packages"},
+				Keys:         []string{"testdata/packages/melange.rsa.pub"},
+				Arch:         "x86_64",
+				Version:      tc.version,
+			})
+			if err != nil {
+				t.Fatalf("failed to build chart: %v", err)
+			}
+
+			md, err := artifact.Metadata()
+			if err != nil {
+				t.Fatalf("failed to get chart metadata: %v", err)
+			}
+
+			if md.Version != tc.wantChartVersion {
+				t.Errorf("chart version = %q, want %q", md.Version, tc.wantChartVersion)
+			}
+		})
+	}
+}

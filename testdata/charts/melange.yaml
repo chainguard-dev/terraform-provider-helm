@@ -23,6 +23,7 @@ data:
     items:
       basic: ""
       basiclibrary: ""
+      versioned: ""
       withimages: ""
 
 subpackages:

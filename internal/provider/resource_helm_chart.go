@@ -96,7 +96,7 @@ func (r *helmChartResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 			},
 			"package_version": schema.StringAttribute{
 				Optional:    true,
-				Description: "The version of the package to fetch from the package repository. If not specified, the latest available version will be used.",
+				Description: "The version of the package to fetch from the package repository, pinned via APK's `name=version` constraint syntax. If not specified, the latest available version will be used.",
 			},
 			"package_arch": schema.StringAttribute{
 				Optional:    true,
@@ -207,6 +207,7 @@ func (r *helmChartResource) do(ctx context.Context, data *helmChartResourceModel
 		Keys:               r.client.extraKeyrings,
 		RuntimeRepos:       r.client.extraRepositories,
 		Arch:               arch,
+		Version:            data.PackageVersion.ValueString(),
 		JSONRFC6902Patches: patches,
 		Images:             images,
 	})
