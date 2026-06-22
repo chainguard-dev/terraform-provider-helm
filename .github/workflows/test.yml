@@ -30,10 +30,8 @@ jobs:
       matrix:
         # list whatever Terraform versions here you would like to support
         terraform:
-          - '1.11.*'
-          - '1.12.*'
-          - '1.13.*'
           - '1.14.*'
+          - '1.15.*'
 
     steps:
       - name: Harden the runner (Audit all outbound calls)
