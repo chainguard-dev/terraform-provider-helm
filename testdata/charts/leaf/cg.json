@@ -1,0 +1,13 @@
+{
+  "images": {
+    "db": {
+      "values": {
+        "image": {
+          "registry": "${registry}",
+          "repository": "${repo}",
+          "tag": "${tag}"
+        }
+      }
+    }
+  }
+}

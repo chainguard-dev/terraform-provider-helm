@@ -130,7 +130,7 @@ func (r *helmChartResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 			},
 			"images": schema.MapAttribute{
 				Optional:    true,
-				Description: "Map of image IDs to full OCI references for resolving cg.json. When provided, the chart's values.yaml will be updated with the resolved image references.",
+				Description: "Map of image IDs to full OCI references. When provided, values.yaml is updated with the resolved references for every matching image ID in the chart's cg.json tree, including subcharts.",
 				ElementType: types.StringType,
 			},
 		},
@@ -203,7 +203,7 @@ func (r *helmChartResource) do(ctx context.Context, data *helmChartResourceModel
 		}
 	}
 
-	ocichart, err := chart.Build(ctx, data.PackageName.ValueString(), &chart.BuildConfig{
+	ocichart, metadata, err := chart.Build(ctx, data.PackageName.ValueString(), &chart.BuildConfig{
 		Keys:               r.client.extraKeyrings,
 		RuntimeRepos:       r.client.extraRepositories,
 		Arch:               arch,
@@ -212,12 +212,6 @@ func (r *helmChartResource) do(ctx context.Context, data *helmChartResourceModel
 	})
 	if err != nil {
 		ds = append(ds, diag.NewErrorDiagnostic("building chart", err.Error()))
-		return ds
-	}
-
-	metadata, err := ocichart.Metadata()
-	if err != nil {
-		ds = append(ds, diag.NewErrorDiagnostic("getting chart metadata", err.Error()))
 		return ds
 	}
 	data.Name = types.StringValue(metadata.Name)

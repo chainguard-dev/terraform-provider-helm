@@ -1,0 +1,10 @@
+apiVersion: v2
+name: withsubchart
+description: Parent chart with a subchart that carries its own cg.json
+type: application
+version: 0.0.1
+appVersion: "1.0.0"
+dependencies:
+  - name: leaf
+    version: "0.0.1"
+    repository: "file://../leaf"

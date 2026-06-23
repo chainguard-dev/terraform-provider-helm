@@ -1,0 +1,6 @@
+apiVersion: v2
+name: leaf
+description: Subchart fixture with its own cg.json image mapping
+type: application
+version: 0.0.1
+appVersion: "1.0.0"

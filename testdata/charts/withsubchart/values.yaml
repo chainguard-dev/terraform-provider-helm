@@ -1,0 +1,6 @@
+# Default values for the parent chart. The leaf subchart's image overrides are
+# added under the "leaf" key at build time; they are intentionally absent here.
+image:
+  registry: docker.io
+  repository: library/nginx
+  tag: latest

@@ -14,12 +14,6 @@ import (
 	helmregistry "helm.sh/helm/v3/pkg/registry"
 )
 
-// Chart defines a compatbile Helm OCI artifact.
-type Chart interface {
-	v1.Image
-	Metadata() (*helmchart.Metadata, error)
-}
-
 type chart struct {
 	metadata *helmchart.Metadata
 	content  v1.Layer
@@ -106,10 +100,6 @@ func (c *chart) Manifest() (*v1.Manifest, error) {
 
 func (c *chart) RawConfigFile() ([]byte, error) {
 	return json.Marshal(c.metadata)
-}
-
-func (c *chart) Metadata() (*helmchart.Metadata, error) {
-	return c.metadata, nil
 }
 
 func (c *chart) config() v1.Layer {

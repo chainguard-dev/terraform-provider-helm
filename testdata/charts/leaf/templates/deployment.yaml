@@ -1,0 +1,16 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-leaf
+spec:
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-leaf
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-leaf
+    spec:
+      containers:
+        - name: db
+          image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}:{{ .Values.image.tag }}"

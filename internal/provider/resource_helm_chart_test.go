@@ -251,6 +251,76 @@ resource "helm_chart" "test" {
 				},
 			},
 		},
+		"package with subchart": {
+			ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+			Steps: []resource.TestStep{
+				{
+					Config: fmt.Sprintf(`
+provider "helm" {
+  extra_repositories = ["../../testdata/packages"]
+  extra_keyrings = ["../../testdata/packages/melange.rsa.pub"]
+}
+
+resource "helm_chart" "test" {
+  repo         = %q
+  package_name = %q
+
+  images = {
+    "main" = "cgr.dev/chainguard/nginx:v1.0"
+    "db"   = "cgr.dev/chainguard/postgres:v16"
+  }
+}
+`, repoURL, "chart-withsubchart"),
+					Check: resource.ComposeAggregateTestCheckFunc(
+						resource.TestCheckResourceAttr(resourceName, "package_name", "chart-withsubchart"),
+						resource.TestCheckResourceAttrSet(resourceName, "digest"),
+						func(s *terraform.State) error {
+							rs, ok := s.RootModule().Resources[resourceName]
+							if !ok {
+								return fmt.Errorf("Not found: %s", resourceName)
+							}
+
+							ociRef := fmt.Sprintf("oci://%s@%s", rs.Primary.Attributes["repo"], rs.Primary.Attributes["digest"])
+							helmChart, _, err := testutil.TestPullAndTemplateChart(ociRef, "withsubchart", false)
+							if err != nil {
+								return err
+							}
+
+							// Top-level chart image resolved.
+							image, ok := helmChart.Values["image"].(map[string]any)
+							if !ok {
+								return fmt.Errorf("Expected image to be a map, got %T", helmChart.Values["image"])
+							}
+							if image["repository"] != "chainguard/nginx" {
+								return fmt.Errorf("Expected image.repository=chainguard/nginx, got %v", image["repository"])
+							}
+
+							// Subchart image resolved under the dependency key, even
+							// though the parent values.yaml had no "leaf" block.
+							leaf, ok := helmChart.Values["leaf"].(map[string]any)
+							if !ok {
+								return fmt.Errorf("Expected leaf to be a map, got %T", helmChart.Values["leaf"])
+							}
+							leafImage, ok := leaf["image"].(map[string]any)
+							if !ok {
+								return fmt.Errorf("Expected leaf.image to be a map, got %T", leaf["image"])
+							}
+							if leafImage["registry"] != "cgr.dev" {
+								return fmt.Errorf("Expected leaf.image.registry=cgr.dev, got %v", leafImage["registry"])
+							}
+							if leafImage["repository"] != "chainguard/postgres" {
+								return fmt.Errorf("Expected leaf.image.repository=chainguard/postgres, got %v", leafImage["repository"])
+							}
+							if leafImage["tag"] != "v16" {
+								return fmt.Errorf("Expected leaf.image.tag=v16, got %v", leafImage["tag"])
+							}
+
+							return nil
+						},
+					),
+				},
+			},
+		},
 	}
 
 	for name, tc := range testCases {

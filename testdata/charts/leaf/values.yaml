@@ -1,0 +1,5 @@
+# Default values for the leaf subchart
+image:
+  registry: docker.io
+  repository: library/postgres
+  tag: latest

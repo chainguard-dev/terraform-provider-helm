@@ -12,13 +12,16 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"testing/fstest"
 
 	"chainguard.dev/apko/pkg/apk/apk"
 	"chainguard.dev/apko/pkg/apk/expandapk"
 	"chainguard.dev/apko/pkg/build"
 	apkotypes "chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/tarfs"
+	sdkchart "chainguard.dev/sdk/helm/chart"
 	"chainguard.dev/sdk/helm/images"
+	helmv1 "chainguard.dev/sdk/helm/v1"
 	jsonpatch "github.com/evanphx/json-patch/v5"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
@@ -34,34 +37,77 @@ type BuildConfig struct {
 	RuntimeRepos       []string
 	Arch               string
 	JSONRFC6902Patches map[string][]byte
-	Images             map[string]string
+	// Images maps image IDs to full OCI references. Every ID present in the
+	// chart's image tree (own images and subcharts) that also appears here is
+	// resolved into values.yaml; IDs absent here are left untouched.
+	Images map[string]string
 }
 
-func Build(ctx context.Context, name string, config *BuildConfig) (Chart, error) {
+func Build(ctx context.Context, name string, config *BuildConfig) (v1.Image, *helmchart.Metadata, error) {
 	cd, err := config.fetch(ctx, name)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	chartl, metadata, err := chartify(cd, config.JSONRFC6902Patches, config.Images)
+	chartl, metadata, err := chartify(cd, config.JSONRFC6902Patches)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build chart layer: %w", err)
+		return nil, nil, fmt.Errorf("failed to build chart layer: %w", err)
 	}
 
-	chart := &chart{
+	base := &chart{
 		metadata:  metadata,
 		content:   chartl,
 		diffIDs:   make(map[v1.Hash]v1.Layer),
 		digestIDs: make(map[v1.Hash]v1.Layer),
 	}
 
-	return chart, nil
+	if cd.ci == nil || len(config.Images) == 0 {
+		return base, metadata, nil
+	}
+
+	// Resolve every image in the tree into values.yaml using the same SDK
+	// patcher catalog-syncer uses, so the published chart's subchart slots are
+	// patched identically to synced charts. The tree (own images plus
+	// subcharts) comes from the chart's own cg.json files; Images supplies the
+	// refs. The returned digest feeds only the (unused) attestation tree.
+	patched, _, err := sdkchart.PatchChartImages(base, cd.ci, func(_ *helmv1.ChartImages, id string, _ *helmv1.ChartImage) (string, string, error) {
+		full, ok := config.Images[id]
+		if !ok {
+			return "", "", sdkchart.ErrSkipImage
+		}
+		return full, "", nil
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("patching chart images: %w", err)
+	}
+	return patched, metadata, nil
+}
+
+// toChartImages converts the cg.json tree read from a chart into the image
+// tree the SDK patcher consumes. Refs carry only the image IDs at each level —
+// the caller's resolver supplies the actual references — and Template carries
+// the values-path mappings parsed from each cg.json.
+func toChartImages(c *sdkchart.Chart) *helmv1.ChartImages {
+	ci := &helmv1.ChartImages{Template: c.Mapping}
+	if c.Mapping != nil {
+		ci.Refs = make(map[string]*helmv1.ChartImage, len(c.Mapping.Images))
+		for id := range c.Mapping.Images {
+			ci.Refs[id] = &helmv1.ChartImage{}
+		}
+	}
+	for dep, sub := range c.Subcharts {
+		if ci.Subcharts == nil {
+			ci.Subcharts = make(map[string]*helmv1.ChartImages, len(c.Subcharts))
+		}
+		ci.Subcharts[dep] = toChartImages(sub)
+	}
+	return ci
 }
 
 // chartify takes a standard "apko" layer and mutates it to the format required by the Helm OCI format.
-// This essentially just "re-roots" the filesystem to the root where Chart.yaml is located.
-// If imageRefs and mapping are provided, it resolves the image values and merges into values.yaml.
-func chartify(cd *chartData, patches map[string][]byte, imageRefs map[string]string) (v1.Layer, *helmchart.Metadata, error) {
+// This essentially just "re-roots" the filesystem to the root where Chart.yaml is located,
+// applying any JSON/YAML patches. Image resolution into values.yaml is handled separately.
+func chartify(cd *chartData, patches map[string][]byte) (v1.Layer, *helmchart.Metadata, error) {
 	gr, err := gzip.NewReader(cd.data)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create gzip reader: %w", err)
@@ -94,9 +140,8 @@ func chartify(cd *chartData, patches map[string][]byte, imageRefs map[string]str
 		}
 
 		p, needsPatch := patches[rel]
-		needsResolve := rel == "values.yaml" && cd.mapping != nil && len(imageRefs) > 0
 
-		if needsPatch || needsResolve || rel == "Chart.yaml" {
+		if needsPatch || rel == "Chart.yaml" {
 			content, err := io.ReadAll(tr)
 			if err != nil {
 				return nil, nil, fmt.Errorf("error reading file: %w", err)
@@ -106,13 +151,6 @@ func chartify(cd *chartData, patches map[string][]byte, imageRefs map[string]str
 				content, err = patchedWith(rel, content, p)
 				if err != nil {
 					return nil, nil, fmt.Errorf("error applying patch to file %s: %w", rel, err)
-				}
-			}
-
-			if needsResolve {
-				content, err = cd.mapping.Resolve(imageRefs, bytes.NewReader(content))
-				if err != nil {
-					return nil, nil, fmt.Errorf("error resolving image values: %w", err)
 				}
 			}
 
@@ -180,9 +218,11 @@ func patchedWith(filename string, original []byte, patchOps []byte) ([]byte, err
 }
 
 type chartData struct {
-	name    string
-	mapping *images.Mapping
-	data    *bytes.Buffer
+	name string
+	// ci is the image tree read from the chart's own cg.json files (top-level
+	// and per-subchart). Nil when the chart carries no cg.json.
+	ci   *helmv1.ChartImages
+	data *bytes.Buffer
 }
 
 // fetch fetches the chart APK and parses its metadata.
@@ -236,7 +276,7 @@ func (c *BuildConfig) fetch(ctx context.Context, name string) (*chartData, error
 	tr := tar.NewReader(gr)
 
 	var chartName string
-	var mapping *images.Mapping
+	files := fstest.MapFS{}
 
 	for {
 		hdr, err := tr.Next()
@@ -247,31 +287,41 @@ func (c *BuildConfig) fetch(ctx context.Context, name string) (*chartData, error
 			return nil, fmt.Errorf("error reading tar: %w", err)
 		}
 
-		// Find chart name from Chart.yaml
-		if dir, ok := strings.CutSuffix(hdr.Name, "/Chart.yaml"); ok {
-			if !strings.Contains(dir, "/") {
-				chartName = dir
-			}
-			continue
+		// The top-level chart's directory (one deep) names the chart.
+		if dir, ok := strings.CutSuffix(hdr.Name, "/Chart.yaml"); ok && !strings.Contains(dir, "/") {
+			chartName = dir
 		}
 
-		// Parse cg.json if present
-		if chartName != "" && hdr.Name == chartName+"/"+images.ChainguardChartMetadataFilename {
-			mapping, err = images.Parse(tr)
-			if err != nil {
-				return nil, fmt.Errorf("parsing %s: %w", images.ChainguardChartMetadataFilename, err)
-			}
+		if hdr.Typeflag != tar.TypeReg {
+			continue
 		}
+		content, err := io.ReadAll(tr)
+		if err != nil {
+			return nil, fmt.Errorf("error reading %s: %w", hdr.Name, err)
+		}
+		files[strings.TrimPrefix(hdr.Name, "./")] = &fstest.MapFile{Data: content}
 	}
 
 	if chartName == "" {
 		return nil, errors.New("package is missing Chart.yaml")
 	}
 
+	// Read the chart's own cg.json tree (top-level plus every subchart) so
+	// subchart image slots can be patched, not just the top-level chart's.
+	// Charts without a cg.json carry no image mappings and are left as-is.
+	var ci *helmv1.ChartImages
+	if _, ok := files[chartName+"/"+images.ChainguardChartMetadataFilename]; ok {
+		c, err := sdkchart.Read(files)
+		if err != nil {
+			return nil, fmt.Errorf("reading chart image tree: %w", err)
+		}
+		ci = toChartImages(c)
+	}
+
 	return &chartData{
-		name:    chartName,
-		mapping: mapping,
-		data:    &databuf,
+		name: chartName,
+		ci:   ci,
+		data: &databuf,
 	}, nil
 }
 

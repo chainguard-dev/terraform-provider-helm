@@ -10,7 +10,9 @@ import (
 	"github.com/chainguard-dev/terraform-provider-helm/internal/testutil"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/registry"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	helmchart "helm.sh/helm/v3/pkg/chart"
 )
 
 func TestBuild(t *testing.T) {
@@ -24,12 +26,12 @@ func TestBuild(t *testing.T) {
 		name        string
 		packageName string
 		patches     map[string][]byte
-		validate    func(t *testing.T, artifact chart.Chart)
+		validate    func(t *testing.T, artifact v1.Image, md *helmchart.Metadata)
 	}{
 		{
 			name:        "basic",
 			packageName: "chart-basic",
-			validate: func(t *testing.T, artifact chart.Chart) {
+			validate: func(t *testing.T, artifact v1.Image, md *helmchart.Metadata) {
 				m, err := artifact.Manifest()
 				if err != nil {
 					t.Fatalf("failed to get chart manifest: %v", err)
@@ -37,11 +39,6 @@ func TestBuild(t *testing.T) {
 
 				if m.Annotations["thisshould"] != "bepreserved" {
 					t.Fatalf("unexpected annotation value: %s", m.Annotations["thisshould"])
-				}
-
-				md, err := artifact.Metadata()
-				if err != nil {
-					t.Fatalf("failed to get chart metadata: %v", err)
 				}
 
 				if md.Annotations["thisshould"] != "bepreserved" {
@@ -59,7 +56,7 @@ func TestBuild(t *testing.T) {
 			patches: map[string][]byte{
 				"Chart.yaml": []byte(`[{"op": "add", "path": "/annotations/patched", "value": "patched-value"}]`),
 			},
-			validate: func(t *testing.T, artifact chart.Chart) {
+			validate: func(t *testing.T, artifact v1.Image, md *helmchart.Metadata) {
 				m, err := artifact.Manifest()
 				if err != nil {
 					t.Fatalf("failed to get chart manifest: %v", err)
@@ -75,11 +72,6 @@ func TestBuild(t *testing.T) {
 					t.Errorf("patched annotation not in manifest, got %q", m.Annotations["patched"])
 				}
 
-				md, err := artifact.Metadata()
-				if err != nil {
-					t.Fatalf("failed to get chart metadata: %v", err)
-				}
-
 				// Verify patched annotation appears in metadata
 				if md.Annotations["patched"] != "patched-value" {
 					t.Errorf("patched annotation not in metadata, got %q", md.Annotations["patched"])
@@ -93,7 +85,7 @@ func TestBuild(t *testing.T) {
 			ctx := t.Context()
 
 			// Build the chart
-			artifact, err := chart.Build(ctx, tc.packageName, &chart.BuildConfig{
+			artifact, metadata, err := chart.Build(ctx, tc.packageName, &chart.BuildConfig{
 				RuntimeRepos:       []string{"testdata/packages"},
 				Keys:               []string{"testdata/packages/melange.rsa.pub"},
 				JSONRFC6902Patches: tc.patches,
@@ -103,13 +95,7 @@ func TestBuild(t *testing.T) {
 			}
 
 			if tc.validate != nil {
-				tc.validate(t, artifact)
-			}
-
-			// Get metadata for constructing a proper OCI reference
-			metadata, err := artifact.Metadata()
-			if err != nil {
-				t.Fatalf("failed to get chart metadata: %v", err)
+				tc.validate(t, artifact, metadata)
 			}
 
 			chartName := metadata.Name
@@ -162,5 +148,54 @@ func TestBuild(t *testing.T) {
 				}
 			})
 		})
+	}
+}
+
+// TestBuildSubchartImages verifies that image references are resolved into a
+// subchart's slots — not just the top-level chart's — by reading the subchart's
+// own cg.json from the chart APK. The leaf subchart's override must appear in
+// the rendered manifest.
+func TestBuildSubchartImages(t *testing.T) {
+	s := httptest.NewServer(registry.New())
+	defer s.Close()
+	registryAddr := strings.TrimPrefix(s.URL, "http://")
+
+	const mainRef = "example.com/over-main:9.9"
+	const dbRef = "example.com/over-db:8.8"
+
+	artifact, metadata, err := chart.Build(t.Context(), "chart-withsubchart", &chart.BuildConfig{
+		RuntimeRepos: []string{"testdata/packages"},
+		Keys:         []string{"testdata/packages/melange.rsa.pub"},
+		Images: map[string]string{
+			"main": mainRef, // top-level chart image
+			"db":   dbRef,   // leaf subchart image
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to build chart: %v", err)
+	}
+
+	chartRef := fmt.Sprintf("%s/%s:%s", registryAddr, metadata.Name, metadata.Version)
+	ref, err := name.ParseReference(chartRef)
+	if err != nil {
+		t.Fatalf("failed to parse reference %q: %v", chartRef, err)
+	}
+	if err := remote.Write(ref, artifact); err != nil {
+		t.Fatalf("failed to push chart: %v", err)
+	}
+
+	ociref := fmt.Sprintf("oci://%s/%s:%s", registryAddr, metadata.Name, metadata.Version)
+	_, rel, err := testutil.TestPullAndTemplateChart(ociref, metadata.Name, false)
+	if err != nil {
+		t.Fatalf("failed to pull and template chart: %v", err)
+	}
+	if rel == nil {
+		t.Fatal("expected rendered release output, got nil")
+	}
+
+	for _, want := range []string{mainRef, dbRef} {
+		if !strings.Contains(rel.Manifest, want) {
+			t.Errorf("rendered manifest missing %q; subchart override not applied\n%s", want, rel.Manifest)
+		}
 	}
 }

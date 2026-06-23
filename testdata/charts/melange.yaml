@@ -24,6 +24,7 @@ data:
       basic: ""
       basiclibrary: ""
       withimages: ""
+      withsubchart: ""
 
 subpackages:
   - name: ${{package.name}}-${{range.key}}
