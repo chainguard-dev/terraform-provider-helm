@@ -9,7 +9,7 @@ set -euo pipefail
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 REPO_ROOT="$( cd "$SCRIPT_DIR/.." &> /dev/null && pwd )"
 TEMP_DIR=$(mktemp -d)
-REGISTRY=${REGISTRY:-registry.local:5000}
+REGISTRY=${REGISTRY:-registry.localhost:5000}
 
 # Cleanup function
 cleanup() {
