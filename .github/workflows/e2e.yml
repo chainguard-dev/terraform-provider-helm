@@ -48,7 +48,7 @@ jobs:
           terraform_wrapper: false
 
       - name: Set up kind
-        uses: chainguard-dev/actions/setup-kind@5f020827ba80ff5d64d45116542d0c733e8e7e71 # v1.6.23
+        uses: chainguard-dev/actions/setup-kind@b2555de0cf9724fb9b49d050ff18bd1f49562ba7 # v1.6.29
         with:
           # go-containerregistry only auto-detects *.localhost hostnames as
           # plain-HTTP registries, so the default registry.local would be
