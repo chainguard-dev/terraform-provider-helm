@@ -49,6 +49,11 @@ jobs:
 
       - name: Set up kind
         uses: chainguard-dev/actions/setup-kind@5f020827ba80ff5d64d45116542d0c733e8e7e71 # v1.6.23
+        with:
+          # go-containerregistry only auto-detects *.localhost hostnames as
+          # plain-HTTP registries, so the default registry.local would be
+          # dialed over HTTPS and fail.
+          registry-authority: registry.localhost:5000
 
       - name: Set up Helm
         uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
