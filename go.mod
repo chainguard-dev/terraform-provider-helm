@@ -1,6 +1,6 @@
 module github.com/chainguard-dev/terraform-provider-helm
 
-go 1.26.3
+go 1.27.0
 
 require (
 	chainguard.dev/apko v1.2.40
