@@ -7,6 +7,7 @@ package provider
 
 import (
 	"context"
+	"os"
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -137,6 +138,7 @@ func (p *helmProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 		extraKeyrings:     extraKeyrings,
 		defaultArch:       defaultArch,
 		ropts:             ropts,
+		skipImageVerify:   os.Getenv(skipImageVerifyEnv) == "true",
 	}
 
 	resp.DataSourceData = client
@@ -155,10 +157,15 @@ func (p *helmProvider) Resources(_ context.Context) []func() resource.Resource {
 	}
 }
 
+// skipImageVerifyEnv names the environment variable that, when set to "true",
+// lets helm_chart publish without checking that its images resolve.
+const skipImageVerifyEnv = "HELM_SKIP_IMAGE_VERIFY"
+
 // helmClient is a client to interact with OCI Helm charts.
 type helmClient struct {
 	extraRepositories []string
 	extraKeyrings     []string
 	defaultArch       string
 	ropts             []remote.Option
+	skipImageVerify   bool
 }
