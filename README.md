@@ -130,6 +130,12 @@ When using package references instead of direct file paths, the provider:
 3. Downloads the package to a temporary file
 4. Extracts the APK and processes it the same way as the direct file path
 
+### Image Verification
+
+When `images` is set, the provider checks that every reference resolves in its registry before it pushes the chart, and fails the apply if one does not. A published chart that names an image nobody can pull is worse than a failed publish.
+
+Set `HELM_SKIP_IMAGE_VERIFY=true` to skip the check, for example in presubmit pipelines that publish charts before their images are released. The provider emits a warning when it skips.
+
 ## Developing the Provider
 
 If you wish to work on the provider, you'll first need [Go](http://www.golang.org) installed on your machine (see [Requirements](#requirements) above).
