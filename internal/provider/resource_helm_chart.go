@@ -8,6 +8,8 @@ package provider
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 
 	"github.com/chainguard-dev/terraform-provider-helm/internal/pkg/chart"
 	jsonpatch "github.com/evanphx/json-patch/v5"
@@ -130,7 +132,7 @@ func (r *helmChartResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 			},
 			"images": schema.MapAttribute{
 				Optional:    true,
-				Description: "Map of image IDs to full OCI references for resolving cg.json. When provided, the chart's values.yaml will be updated with the resolved image references.",
+				Description: "Map of image IDs to full OCI references for resolving cg.json. When provided, the chart's values.yaml will be updated with the resolved image references. Each reference must resolve in its registry before the chart is pushed; set HELM_SKIP_IMAGE_VERIFY=true to skip that check.",
 				ElementType: types.StringType,
 			},
 		},
@@ -146,6 +148,9 @@ func (r *helmChartResource) Create(ctx context.Context, req resource.CreateReque
 	}
 
 	resp.Diagnostics.Append(r.do(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -181,6 +186,9 @@ func (r *helmChartResource) Update(ctx context.Context, req resource.UpdateReque
 	}
 
 	resp.Diagnostics.Append(r.do(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -201,6 +209,14 @@ func (r *helmChartResource) do(ctx context.Context, data *helmChartResourceModel
 		if diags := data.Images.ElementsAs(ctx, &images, false); diags != nil {
 			return diags
 		}
+	}
+
+	if len(images) > 0 && r.client.skipImageVerify {
+		ds = append(ds, diag.NewWarningDiagnostic("Skipping chart image verification",
+			fmt.Sprintf("Not checking that chart images resolve, as per environment variable %s", skipImageVerifyEnv)))
+	} else if err := verifyImages(ctx, images, r.client.ropts...); err != nil {
+		ds = append(ds, diag.NewErrorDiagnostic("verifying chart images", err.Error()))
+		return ds
 	}
 
 	ocichart, err := chart.Build(ctx, data.PackageName.ValueString(), &chart.BuildConfig{
@@ -244,6 +260,24 @@ func (r *helmChartResource) do(ctx context.Context, data *helmChartResourceModel
 
 	data.ID = types.StringValue(ref.Context().Digest(digest.String()).String())
 	return ds
+}
+
+// verifyImages confirms every image reference resolves in its registry, so a
+// chart never bakes an image nobody can pull into its values.yaml. A reference
+// carrying both a tag and a digest is checked by digest; the tag is not
+// consulted.
+func verifyImages(ctx context.Context, images map[string]string, ropts ...remote.Option) error {
+	ropts = append(slices.Clone(ropts), remote.WithContext(ctx))
+	for _, id := range slices.Sorted(maps.Keys(images)) {
+		ref, err := name.ParseReference(images[id])
+		if err != nil {
+			return fmt.Errorf("image %q: %w", id, err)
+		}
+		if _, err := remote.Head(ref, ropts...); err != nil {
+			return fmt.Errorf("image %q: %s does not resolve: %w", id, images[id], err)
+		}
+	}
+	return nil
 }
 
 // Delete deletes the resource and removes the Terraform state on success.
