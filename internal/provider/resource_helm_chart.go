@@ -210,6 +210,7 @@ func (r *helmChartResource) do(ctx context.Context, data *helmChartResourceModel
 		Version:            data.PackageVersion.ValueString(),
 		JSONRFC6902Patches: patches,
 		Images:             images,
+		Transport:          r.client.transport,
 	})
 	if err != nil {
 		ds = append(ds, diag.NewErrorDiagnostic("building chart", err.Error()))

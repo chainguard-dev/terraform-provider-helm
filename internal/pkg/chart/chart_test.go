@@ -1,9 +1,13 @@
 package chart_test
 
 import (
+	"context"
 	"fmt"
+	"net"
+	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/chainguard-dev/terraform-provider-helm/internal/pkg/chart"
@@ -11,6 +15,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/registry"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/hashicorp/go-cleanhttp"
 )
 
 func TestBuild(t *testing.T) {
@@ -199,5 +204,49 @@ func TestBuildVersionPin(t *testing.T) {
 				t.Errorf("chart version = %q, want %q", md.Version, tc.wantChartVersion)
 			}
 		})
+	}
+}
+
+func TestBuildSharedTransport(t *testing.T) {
+	var requests atomic.Int64
+	fs := http.FileServer(http.Dir("testdata/packages"))
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		fs.ServeHTTP(w, r)
+	}))
+	defer s.Close()
+
+	var dials atomic.Int64
+	transport := cleanhttp.DefaultPooledTransport()
+	dial := transport.DialContext
+	transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		dials.Add(1)
+		return dial(ctx, network, addr)
+	}
+
+	build := func() {
+		if _, err := chart.Build(t.Context(), "chart-basic", &chart.BuildConfig{
+			RuntimeRepos: []string{s.URL},
+			Keys:         []string{"testdata/packages/melange.rsa.pub"},
+			Arch:         "x86_64",
+			Transport:    transport,
+		}); err != nil {
+			t.Fatalf("failed to build chart: %v", err)
+		}
+	}
+
+	// The first build may dial more than once since apko issues some requests concurrently.
+	build()
+	firstDials, firstRequests := dials.Load(), requests.Load()
+	if firstDials == 0 {
+		t.Fatal("transport was not used")
+	}
+
+	build()
+	if requests.Load() == firstRequests {
+		t.Fatal("second build made no requests")
+	}
+	if got := dials.Load(); got != firstDials {
+		t.Errorf("second build dialed %d new connections, want 0", got-firstDials)
 	}
 }

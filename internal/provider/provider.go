@@ -7,11 +7,13 @@ package provider
 
 import (
 	"context"
+	"net/http"
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/v1/google"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/hashicorp/go-cleanhttp"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
@@ -137,6 +139,9 @@ func (p *helmProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 		extraKeyrings:     extraKeyrings,
 		defaultArch:       defaultArch,
 		ropts:             ropts,
+		// Share one pool across all builds, otherwise apko creates a fresh
+		// transport per build and redials every host each time.
+		transport: cleanhttp.DefaultPooledTransport(),
 	}
 
 	resp.DataSourceData = client
@@ -161,4 +166,5 @@ type helmClient struct {
 	extraKeyrings     []string
 	defaultArch       string
 	ropts             []remote.Option
+	transport         http.RoundTripper
 }
