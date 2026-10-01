@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -35,6 +36,7 @@ type BuildConfig struct {
 	Arch               string
 	JSONRFC6902Patches map[string][]byte
 	Images             map[string]string
+	Transport          http.RoundTripper
 }
 
 func Build(ctx context.Context, name string, config *BuildConfig) (Chart, error) {
@@ -303,6 +305,7 @@ func (c *BuildConfig) bc(ctx context.Context, name string) (*build.Context, erro
 	opts := []build.Option{
 		build.WithArch(apkotypes.ParseArchitecture(c.Arch)),
 		build.WithImageConfiguration(ic),
+		build.WithTransport(c.Transport),
 	}
 
 	return build.New(ctx, tarfs.New(), opts...)
