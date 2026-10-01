@@ -37,6 +37,7 @@ type BuildConfig struct {
 	JSONRFC6902Patches map[string][]byte
 	Images             map[string]string
 	Transport          http.RoundTripper
+	Cache              *apk.Cache
 }
 
 func Build(ctx context.Context, name string, config *BuildConfig) (Chart, error) {
@@ -306,6 +307,9 @@ func (c *BuildConfig) bc(ctx context.Context, name string) (*build.Context, erro
 		build.WithArch(apkotypes.ParseArchitecture(c.Arch)),
 		build.WithImageConfiguration(ic),
 		build.WithTransport(c.Transport),
+	}
+	if c.Cache != nil {
+		opts = append(opts, build.WithCache("", false, c.Cache))
 	}
 
 	return build.New(ctx, tarfs.New(), opts...)

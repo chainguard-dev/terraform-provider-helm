@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"time"
 
+	"chainguard.dev/apko/pkg/apk/apk"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/v1/google"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -142,6 +143,9 @@ func (p *helmProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 		// Share one pool across all builds, otherwise apko creates a fresh
 		// transport per build and redials every host each time.
 		transport: cleanhttp.DefaultPooledTransport(),
+		// Share one cache across all builds, otherwise every build refetches the
+		// same keys and APKINDEXes.
+		cache: apk.NewCache(true),
 	}
 
 	resp.DataSourceData = client
@@ -167,4 +171,5 @@ type helmClient struct {
 	defaultArch       string
 	ropts             []remote.Option
 	transport         http.RoundTripper
+	cache             *apk.Cache
 }
