@@ -4,7 +4,7 @@ go 1.27.0
 
 require (
 	chainguard.dev/apko v1.4.5
-	chainguard.dev/sdk v0.1.278
+	chainguard.dev/sdk v0.1.298
 	github.com/evanphx/json-patch/v5 v5.9.11
 	github.com/google/go-containerregistry v0.22.1
 	github.com/hashicorp/go-cleanhttp v0.5.2
