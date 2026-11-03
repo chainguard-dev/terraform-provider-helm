@@ -1,0 +1,53 @@
+# Copyright 2026 Chainguard, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+# Publishes a chart with the provider built from the tree and installs it
+# into a kind cluster.
+version: 1
+
+checks:
+  e2e:
+    description: >-
+      Runs e2e-tests/e2e.sh: terraform apply publishes istio-charts-base from
+      e2e-tests/local-apk-repo to the local registry, then helm installs it
+      into a kind cluster and the Istio CRDs must show up.
+    environment:
+      packages:
+        - go-1.27~1.27
+        - bash
+        - coreutils
+        - git
+        - grep
+        - helm-4
+        - kind
+        - kubectl-latest
+        - terraform-1.17~1.17
+      services: [docker, registry]
+      vars:
+        GOTOOLCHAIN: local
+        GOTMPDIR: /var/tmp
+        CHECKPOINT_DISABLE: "1"
+        # go-containerregistry and helm --plain-http both treat localhost as
+        # a plain-HTTP registry.
+        REGISTRY: localhost:5000
+    trigger: [presubmit, postsubmit]
+    resources: medium
+    timeout: 20m
+    network:
+      egress:
+        - proxy.golang.org
+        - sum.golang.org
+        - storage.googleapis.com
+        # The docker-in-docker daemon pulls kind's node image through this
+        # mirror, falling back to Docker Hub.
+        - mirror.gcr.io
+        - registry-1.docker.io
+        - index.docker.io
+        - auth.docker.io
+        - production.cloudfront.docker.com
+        - docker-images-prod.s3.dualstack.us-east-1.amazonaws.com
+    shell: bash
+    script: |
+      set -eu
+      kind create cluster --wait 5m
+      ./e2e-tests/e2e.sh
