@@ -8,11 +8,14 @@ package provider_test
 import (
 	"fmt"
 	"net/http/httptest"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
 	helmprovider "github.com/chainguard-dev/terraform-provider-helm/internal/provider"
 	"github.com/chainguard-dev/terraform-provider-helm/internal/testutil"
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-containerregistry/pkg/name"
 	registry "github.com/google/go-containerregistry/pkg/registry"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -35,7 +38,142 @@ func TestAccHelmChartResource(t *testing.T) {
 	portPart := strings.Split(serverURL, ":")[1]
 	repoURL := fmt.Sprintf("localhost:%s/test-repo", portPart)
 
+	cgJSON, err := filepath.Abs("../../testdata/charts/withimages/cg.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mainDigest := "sha256:" + strings.Repeat("a", 64)
+	sidecarDigest := "sha256:" + strings.Repeat("b", 64)
+	chartImages := func(refs string) string {
+		return fmt.Sprintf(`
+provider "helm" {
+  extra_repositories = ["../../testdata/packages"]
+  extra_keyrings     = ["../../testdata/packages/melange.rsa.pub"]
+}
+
+resource "helm_chart" "test" {
+  repo         = %q
+  package_name = "chart-withimages"
+  package_arch = "x86_64"
+
+  chart_images = jsonencode({
+    refs     = {%s}
+    template = jsondecode(file(%q))
+  })
+}
+`, repoURL, refs, cgJSON)
+	}
+	validRefs := fmt.Sprintf(`
+      main    = { repoName = "cgr.dev/chainguard-private/nginx", tag = "1.27", digest = %q }
+      sidecar = { repoName = "cgr.dev/chainguard-private/redis-fips", tag = "7.4", digest = %q }
+`, mainDigest, sidecarDigest)
+
 	testCases := map[string]resource.TestCase{
+		"package with chart images": {
+			ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+			Steps: []resource.TestStep{
+				{
+					Config: chartImages(validRefs),
+					Check: resource.ComposeAggregateTestCheckFunc(
+						resource.TestCheckResourceAttrSet(resourceName, "digest"),
+						func(s *terraform.State) error {
+							rs, ok := s.RootModule().Resources[resourceName]
+							if !ok {
+								return fmt.Errorf("Not found: %s", resourceName)
+							}
+							ociRef := fmt.Sprintf("oci://%s@%s", rs.Primary.Attributes["repo"], rs.Primary.Attributes["digest"])
+							helmChart, _, err := testutil.TestPullAndTemplateChart(ociRef, "withimages", false)
+							if err != nil {
+								return err
+							}
+
+							want := map[string]any{
+								"image": map[string]any{
+									"registry":   "cgr.dev",
+									"repository": "chainguard-private/nginx",
+									"tag":        "1.27",
+									"digest":     mainDigest,
+								},
+								"sidecar": map[string]any{
+									"image": map[string]any{
+										"registry":   "cgr.dev",
+										"repository": "chainguard-private/redis-fips",
+										"tag":        "7.4@" + sidecarDigest,
+									},
+								},
+							}
+							if diff := cmp.Diff(want, helmChart.Values); diff != "" {
+								return fmt.Errorf("packaged values mismatch (-want +got):\n%s", diff)
+							}
+							return nil
+						},
+					),
+				},
+			},
+		},
+		"chart images missing a mapped image": {
+			ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+			Steps: []resource.TestStep{
+				{
+					Config: chartImages(fmt.Sprintf(`
+      main = { repoName = "cgr.dev/chainguard-private/nginx", tag = "1.27", digest = %q }
+`, mainDigest)),
+					ExpectError: regexp.MustCompile(`image "sidecar" has no ref`),
+				},
+			},
+		},
+		"chart images with an extra image": {
+			ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+			Steps: []resource.TestStep{
+				{
+					Config: chartImages(validRefs + fmt.Sprintf(`
+      extra = { repoName = "cgr.dev/chainguard-private/extra", tag = "1", digest = %q }
+`, mainDigest)),
+					ExpectError: regexp.MustCompile(`image "extra" is not in the packaged mapping`),
+				},
+			},
+		},
+		"malformed chart images": {
+			ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+			Steps: []resource.TestStep{
+				{
+					Config: chartImages(`
+      main = { repoName = "chainguard-private/nginx:1.27", digest = "sha256:abc" }
+`),
+					PlanOnly:    true,
+					ExpectError: regexp.MustCompile(`Invalid chart images`),
+				},
+			},
+		},
+		"chart images conflict with images": {
+			ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+			Steps: []resource.TestStep{
+				{
+					Config: fmt.Sprintf(`
+provider "helm" {
+  extra_repositories = ["../../testdata/packages"]
+  extra_keyrings     = ["../../testdata/packages/melange.rsa.pub"]
+}
+
+resource "helm_chart" "test" {
+  repo         = %q
+  package_name = "chart-withimages"
+  package_arch = "x86_64"
+
+  images = {
+    main = "cgr.dev/chainguard-private/nginx:1.27@%s"
+  }
+  chart_images = jsonencode({
+    refs     = {}
+    template = { images = {} }
+  })
+}
+`, repoURL, mainDigest),
+					PlanOnly:    true,
+					ExpectError: regexp.MustCompile(`Conflicting image inputs`),
+				},
+			},
+		},
 		"basic package": {
 			ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 			Steps: []resource.TestStep{

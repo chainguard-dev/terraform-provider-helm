@@ -20,6 +20,7 @@ import (
 	apkotypes "chainguard.dev/apko/pkg/build/types"
 	"chainguard.dev/apko/pkg/tarfs"
 	"chainguard.dev/sdk/helm/images"
+	helmv1 "chainguard.dev/sdk/helm/v1"
 	jsonpatch "github.com/evanphx/json-patch/v5"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
@@ -38,6 +39,11 @@ type BuildConfig struct {
 	Images             map[string]string
 	Transport          http.RoundTripper
 	Cache              *apk.Cache
+	// ChartImages, when set, patches the refs of every chart level, nested
+	// subchart aliases included, into the packaged top-level values.yaml
+	// after JSONRFC6902Patches. It must match the packaged cg.json mappings
+	// exactly (see [ParseChartImages]) and cannot be combined with Images.
+	ChartImages *helmv1.ChartImages
 }
 
 func Build(ctx context.Context, name string, config *BuildConfig) (Chart, error) {
@@ -46,7 +52,16 @@ func Build(ctx context.Context, name string, config *BuildConfig) (Chart, error)
 		return nil, err
 	}
 
-	chartl, metadata, err := chartify(cd, config.JSONRFC6902Patches, config.Images)
+	return config.build(cd)
+}
+
+// build packages fetched chart data.
+func (c *BuildConfig) build(cd *chartData) (Chart, error) {
+	if c.ChartImages != nil && len(c.Images) > 0 {
+		return nil, errors.New("images and chart images are mutually exclusive")
+	}
+
+	chartl, metadata, err := chartify(cd, c.JSONRFC6902Patches, c.Images)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build chart layer: %w", err)
 	}
@@ -56,6 +71,12 @@ func Build(ctx context.Context, name string, config *BuildConfig) (Chart, error)
 		content:   chartl,
 		diffIDs:   make(map[v1.Hash]v1.Layer),
 		digestIDs: make(map[v1.Hash]v1.Layer),
+	}
+
+	if c.ChartImages != nil {
+		if err := chart.patchChartImages(c.ChartImages); err != nil {
+			return nil, err
+		}
 	}
 
 	return chart, nil
