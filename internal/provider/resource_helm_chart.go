@@ -14,6 +14,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
@@ -23,8 +24,9 @@ import (
 
 // Ensure the implementation satisfies the expected interfaces.
 var (
-	_ resource.Resource              = &helmChartResource{}
-	_ resource.ResourceWithConfigure = &helmChartResource{}
+	_ resource.Resource                   = &helmChartResource{}
+	_ resource.ResourceWithConfigure      = &helmChartResource{}
+	_ resource.ResourceWithValidateConfig = &helmChartResource{}
 )
 
 // NewHelmChartResource is a helper function to simplify the provider implementation.
@@ -49,6 +51,7 @@ type helmChartResourceModel struct {
 	ChartVersion   types.String `tfsdk:"chart_version"`
 	JSONPatches    types.Map    `tfsdk:"json_patches"`
 	Images         types.Map    `tfsdk:"images"`
+	ChartImages    types.String `tfsdk:"chart_images"`
 }
 
 // Configure adds the provider configured client to the resource.
@@ -130,10 +133,39 @@ func (r *helmChartResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 			},
 			"images": schema.MapAttribute{
 				Optional:    true,
-				Description: "Map of image IDs to full OCI references for resolving cg.json. When provided, the chart's values.yaml will be updated with the resolved image references.",
+				Description: "Map of image IDs to full OCI references for resolving cg.json. When provided, the chart's values.yaml will be updated with the resolved image references. Conflicts with `chart_images`.",
 				ElementType: types.StringType,
 			},
+			"chart_images": schema.StringAttribute{
+				Optional: true,
+				Description: "JSON chart images tree (`refs`, `template` and `subcharts` keyed by dependency alias, as in a Chainguard chart lock) whose refs are patched into the packaged values.yaml for the chart and every nested subchart alias, after `json_patches`. " +
+					"Each level must match the packaged cg.json exactly: the same `template`, a ref for every mapped image including optional ones and no others, and the same mapped subchart aliases. Unknown fields and null entries are rejected. " +
+					"Unlike a chart lock, each ref's `repoName` is the canonical fully qualified repository the chart will reference, including the registry, without a tag or digest. `digest` (sha256) is required; `tag` is required only when the image's template uses `${tag}` or `${pseudo_tag}`. " +
+					"It's easiest to use the jsonencode function to generate the JSON string. Conflicts with `images`.",
+			},
 		},
+	}
+}
+
+// ValidateConfig rejects combining the two image inputs and malformed chart images.
+func (r *helmChartResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
+	var data helmChartResourceModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if !data.ChartImages.IsNull() && !data.Images.IsNull() {
+		resp.Diagnostics.AddAttributeError(path.Root("chart_images"), "Conflicting image inputs",
+			"chart_images and images cannot both be set; chart_images supplies the chart's own images as well as its subcharts'.")
+		return
+	}
+
+	if data.ChartImages.IsNull() || data.ChartImages.IsUnknown() {
+		return
+	}
+	if _, err := chart.ParseChartImages([]byte(data.ChartImages.ValueString())); err != nil {
+		resp.Diagnostics.AddAttributeError(path.Root("chart_images"), "Invalid chart images", err.Error())
 	}
 }
 
@@ -203,7 +235,7 @@ func (r *helmChartResource) do(ctx context.Context, data *helmChartResourceModel
 		}
 	}
 
-	ocichart, err := chart.Build(ctx, data.PackageName.ValueString(), &chart.BuildConfig{
+	cfg := &chart.BuildConfig{
 		Keys:               r.client.extraKeyrings,
 		RuntimeRepos:       r.client.extraRepositories,
 		Arch:               arch,
@@ -212,7 +244,17 @@ func (r *helmChartResource) do(ctx context.Context, data *helmChartResourceModel
 		Images:             images,
 		Transport:          r.client.transport,
 		Cache:              r.client.cache,
-	})
+	}
+	if !data.ChartImages.IsNull() && !data.ChartImages.IsUnknown() {
+		ci, err := chart.ParseChartImages([]byte(data.ChartImages.ValueString()))
+		if err != nil {
+			ds = append(ds, diag.NewAttributeErrorDiagnostic(path.Root("chart_images"), "Invalid chart images", err.Error()))
+			return ds
+		}
+		cfg.ChartImages = ci
+	}
+
+	ocichart, err := chart.Build(ctx, data.PackageName.ValueString(), cfg)
 	if err != nil {
 		ds = append(ds, diag.NewErrorDiagnostic("building chart", err.Error()))
 		return ds
