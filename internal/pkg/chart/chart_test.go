@@ -91,6 +91,43 @@ func TestBuild(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:        "home and sources annotations",
+			packageName: "chart-basic",
+			patches: map[string][]byte{
+				"Chart.yaml": []byte(`[
+					{"op": "add", "path": "/home", "value": "https://example.com/home"},
+					{"op": "add", "path": "/sources", "value": ["https://example.com/first", "https://example.com/second"]}
+				]`),
+			},
+			validate: func(t *testing.T, artifact chart.Chart) {
+				m, err := artifact.Manifest()
+				if err != nil {
+					t.Fatalf("failed to get chart manifest: %v", err)
+				}
+				if got, want := m.Annotations["org.opencontainers.image.source"], "https://example.com/first"; got != want {
+					t.Errorf("image.source = %q, want %q", got, want)
+				}
+				if got, want := m.Annotations["org.opencontainers.image.url"], "https://example.com/home"; got != want {
+					t.Errorf("image.url = %q, want %q", got, want)
+				}
+			},
+		},
+		{
+			name:        "no home or sources",
+			packageName: "chart-basic",
+			validate: func(t *testing.T, artifact chart.Chart) {
+				m, err := artifact.Manifest()
+				if err != nil {
+					t.Fatalf("failed to get chart manifest: %v", err)
+				}
+				for _, k := range []string{"org.opencontainers.image.source", "org.opencontainers.image.url"} {
+					if v, ok := m.Annotations[k]; ok {
+						t.Errorf("unexpected %s annotation %q", k, v)
+					}
+				}
+			},
+		},
 	}
 
 	for _, tc := range tests {

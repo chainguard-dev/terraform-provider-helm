@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
-	"strings"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/partial"
@@ -95,8 +94,13 @@ func (c *chart) Manifest() (*v1.Manifest, error) {
 		},
 	}
 
+	// As helm push does: image.source holds one URL, so it is the first
+	// source, and image.url is the chart's home.
 	if len(c.metadata.Sources) > 0 {
-		m.Annotations["org.opencontainers.image.source"] = strings.Join(c.metadata.Sources, ",")
+		m.Annotations["org.opencontainers.image.source"] = c.metadata.Sources[0]
+	}
+	if c.metadata.Home != "" {
+		m.Annotations["org.opencontainers.image.url"] = c.metadata.Home
 	}
 
 	maps.Copy(m.Annotations, c.metadata.Annotations)
